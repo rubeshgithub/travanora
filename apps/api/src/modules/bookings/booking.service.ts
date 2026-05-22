@@ -2,8 +2,8 @@ import { Types } from 'mongoose';
 import { DuffelError } from '@duffel/api';
 import { duffel } from '../../lib/duffel.js';
 import { logger } from '../../lib/logger.js';
-import type { CreateOrderInput, NormalisedOffer } from '@travanora/shared';
-import { Booking } from './booking.model.js';
+import type { CreateOrderInput, NormalisedOffer, BookingDraftInput } from '@travanora/shared';
+import { Booking, type IBooking, type IOfferSnapshot } from './booking.model.js';
 import { AppError } from '../../middleware/error.handler.js';
 
 function roundPrice(n: number): number {
@@ -98,6 +98,7 @@ export async function createOrder(
   savings: number;
   currency: string;
   offer: NormalisedOffer;
+  passengers: CreateOrderInput['passengers'];
 }> {
   // Re-fetch offer to get Duffel passenger IDs and validate it hasn't expired
   const rawOffer = await duffel.offers.get(input.offerId);
@@ -193,4 +194,102 @@ export async function createOrder(
   });
 
   return { bookingRef, duffelOrderId, totalAmount: chargedToUser, savings: offer.savings, currency: offer.currency, offer, passengers: input.passengers };
+}
+
+// ─── Phase 2 ─────────────────────────────────────────────────────────────────
+
+export async function createDraft(
+  userId: Types.ObjectId,
+  input: BookingDraftInput,
+  discountPercent: number,
+): Promise<{
+  bookingId: string;
+  totalAmount: number;
+  currency: string;
+  expiresAt: Date;
+  publicPrice: number;
+  memberDiscount: number;
+  discountPercent: number;
+}> {
+  logger.info({ offerId: input.offerId, userId }, 'Creating booking draft');
+
+  const rawOffer = await duffel.offers.get(input.offerId);
+  const offer = normaliseOffer(rawOffer.data, discountPercent);
+
+  // Validate passenger count
+  const duffelPassengerCount = rawOffer.data.passengers.length;
+  if (input.passengers.length !== duffelPassengerCount) {
+    throw new AppError(
+      422,
+      'PASSENGER_COUNT_MISMATCH',
+      `Offer requires ${duffelPassengerCount} passenger(s) but ${input.passengers.length} provided`,
+    );
+  }
+
+  const publicPrice = offer.publicPrice;
+  const memberDiscount = discountPercent > 0 ? roundPrice(publicPrice * discountPercent / 100) : 0;
+  const totalAmount = roundPrice(publicPrice - memberDiscount);
+
+  const offerSnapshot: IOfferSnapshot = {
+    slices: offer.slices.map((s) => ({
+      origin: s.origin,
+      originName: s.originName,
+      destination: s.destination,
+      destinationName: s.destinationName,
+      departureAt: s.departureAt,
+      arrivalAt: s.arrivalAt,
+      durationMinutes: s.durationMinutes,
+      stops: s.stops,
+      segments: s.segments,
+    })),
+    airline: offer.airlineName,
+    airlineCode: offer.airlineCode,
+    cabinClass: offer.cabinClass,
+  };
+
+  const expiresAt = rawOffer.data.expires_at
+    ? new Date(rawOffer.data.expires_at)
+    : new Date(Date.now() + 30 * 60 * 1000);
+
+  const draftData = {
+    status: 'draft' as const,
+    duffelOfferId: input.offerId,
+    duffelOfferExpiresAt: expiresAt,
+    offerSnapshot,
+    passengers: input.passengers,
+    contactEmail: input.contactEmail,
+    contactPhone: input.contactPhone,
+    publicPrice,
+    memberDiscount,
+    totalAmount,
+    currency: offer.currency,
+    discountPercent,
+    savings: memberDiscount, // compat alias
+  };
+
+  // Upsert: if the user goes back and re-submits, update the existing draft
+  // rather than creating a conflicting second document.
+  const booking = await Booking.findOneAndUpdate(
+    { userId, duffelOfferId: input.offerId, status: 'draft' },
+    { $set: draftData },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+
+  logger.info({ bookingId: booking.id, userId, totalAmount, currency: offer.currency }, 'Booking draft created');
+
+  return {
+    bookingId: booking.id as string,
+    totalAmount,
+    currency: offer.currency,
+    expiresAt,
+    publicPrice,
+    memberDiscount,
+    discountPercent,
+  };
+}
+
+export async function loadBookingForUser(bookingId: string, userId: Types.ObjectId): Promise<IBooking> {
+  const booking = await Booking.findOne({ _id: bookingId, userId });
+  if (!booking) throw new AppError(404, 'BOOKING_NOT_FOUND', 'Booking not found');
+  return booking;
 }

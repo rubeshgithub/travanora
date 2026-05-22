@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { CreateOrderInputSchema } from '@travanora/shared';
+import { CreateOrderInputSchema, BookingDraftInputSchema } from '@travanora/shared';
 import { Member } from '../auth/member.model.js';
 import { AppError } from '../../middleware/error.handler.js';
-import { getOffer, createOrder } from './booking.service.js';
+import { getOffer, createOrder, createDraft, loadBookingForUser } from './booking.service.js';
 import { Booking } from './booking.model.js';
 import { Types } from 'mongoose';
 
@@ -31,12 +31,37 @@ export async function createOrderHandler(req: Request, res: Response) {
 export async function listBookingsHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
 
-  const bookings = await Booking.find({ userId: new Types.ObjectId(req.user.sub) })
+  const bookings = await Booking.find({
+    userId: new Types.ObjectId(req.user.sub),
+    status: { $in: ['confirmed', 'paid', 'cancelled', 'payment_succeeded_booking_failed'] },
+  })
     .sort({ createdAt: -1 })
     .lean();
 
   return res.json(bookings);
 }
+
+// ─── Phase 2 handlers ────────────────────────────────────────────────────────
+
+export async function createDraftHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+
+  const input = BookingDraftInputSchema.parse(req.body);
+  const discountPercent = await getMemberDiscount(req.user.sub);
+
+  const result = await createDraft(new Types.ObjectId(req.user.sub), input, discountPercent);
+  return res.status(201).json(result);
+}
+
+export async function getBookingByIdHandler(req: Request, res: Response) {
+  if (!req.user) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');
+
+  const { id } = req.params as { id: string };
+  const booking = await loadBookingForUser(id, new Types.ObjectId(req.user.sub));
+  return res.json(booking);
+}
+
+// ─── Phase 1 handlers (kept for /api/me/bookings compat) ─────────────────────
 
 export async function getBookingByRefHandler(req: Request, res: Response) {
   if (!req.user) throw new AppError(401, 'UNAUTHORIZED', 'Authentication required');

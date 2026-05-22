@@ -78,7 +78,7 @@ function PassengerCard({ passenger, index, total }: { passenger: BookingPassenge
 // ── View built from a fresh BookingConfirmation (just booked) ─────────────────
 
 function ConfirmationFromState({ confirmation }: { confirmation: BookingConfirmation }) {
-  const { offer, passengers, totalAmount, savings, currency } = confirmation;
+  const { offer, passengers, totalAmount, currency } = confirmation;
   const isReturn = offer.slices.length > 1;
 
   return (
@@ -123,7 +123,7 @@ function ConfirmationFromState({ confirmation }: { confirmation: BookingConfirma
       </Section>
 
       {/* Price */}
-      <PriceSummary totalAmount={totalAmount} savings={savings} currency={currency} />
+      <PriceSummary totalAmount={totalAmount} currency={currency} />
     </ConfirmationShell>
   );
 }
@@ -131,7 +131,7 @@ function ConfirmationFromState({ confirmation }: { confirmation: BookingConfirma
 // ── View built from a fetched BookingDetail (from My Bookings) ────────────────
 
 function ConfirmationFromDetail({ detail }: { detail: BookingDetail }) {
-  const { sliceSummary, passengers, totalAmount, savings, currency, status } = detail;
+  const { sliceSummary, passengers, totalAmount, publicPrice, memberDiscount, discountPercent, currency, status, paidAt } = detail;
   const isReturn = sliceSummary.length > 1;
 
   return (
@@ -173,7 +173,14 @@ function ConfirmationFromDetail({ detail }: { detail: BookingDetail }) {
       </Section>
 
       {/* Price */}
-      <PriceSummary totalAmount={totalAmount} savings={savings} currency={currency} />
+      <PriceSummary
+        totalAmount={totalAmount}
+        publicPrice={publicPrice}
+        memberDiscount={memberDiscount}
+        discountPercent={discountPercent}
+        currency={currency}
+        paidAt={paidAt}
+      />
     </ConfirmationShell>
   );
 }
@@ -189,18 +196,55 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function PriceSummary({ totalAmount, savings, currency }: { totalAmount: number; savings: number; currency: string }) {
+function PriceSummary({
+  totalAmount,
+  publicPrice,
+  memberDiscount,
+  discountPercent,
+  currency,
+  paidAt,
+}: {
+  totalAmount: number;
+  publicPrice?: number;
+  memberDiscount?: number;
+  discountPercent?: number;
+  currency: string;
+  paidAt?: string;
+}) {
+  const hasMemberDiscount = (discountPercent ?? 0) > 0 && (memberDiscount ?? 0) > 0;
+
   return (
-    <div className="border-t border-line pt-4 space-y-2">
-      {savings > 0 && (
-        <div className="flex justify-between text-sm">
-          <span className="text-muted">Member savings</span>
-          <span className="text-green font-medium">−{formatPrice(savings, currency)}</span>
-        </div>
+    <div className="border-t border-line pt-4 space-y-2 text-sm">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-muted mb-3">Payment</p>
+
+      {hasMemberDiscount && publicPrice != null && (
+        <>
+          <div className="flex justify-between">
+            <span className="text-muted">Base fare</span>
+            <span className="text-navy line-through opacity-60">{formatPrice(publicPrice, currency)}</span>
+          </div>
+          <div className="flex justify-between text-green">
+            <span>Member discount ({discountPercent}%)</span>
+            <span>−{formatPrice(memberDiscount!, currency)}</span>
+          </div>
+        </>
       )}
-      <div className="flex justify-between">
+
+      <div className="flex justify-between items-baseline pt-1 border-t border-line/60">
         <span className="font-semibold text-navy">Total paid</span>
         <span className="text-xl font-bold text-navy">{formatPrice(totalAmount, currency)}</span>
+      </div>
+
+      {paidAt && (
+        <div className="flex justify-between text-muted">
+          <span>Payment date</span>
+          <span>{new Date(paidAt).toLocaleDateString('en-KW', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+        </div>
+      )}
+
+      <div className="flex justify-between text-muted">
+        <span>Payment method</span>
+        <span>Card</span>
       </div>
     </div>
   );

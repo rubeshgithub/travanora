@@ -21,7 +21,6 @@ const STOP_LABELS: Record<number, string> = { 0: 'Nonstop', 1: '1 stop', 2: '2+ 
 export function SearchPage() {
   const { mutate: search, data, isPending, error, isSuccess } = useFlightSearch();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const member = useAuthStore((s) => s.member);
   const resultsRef = useRef<HTMLDivElement>(null);
 
   // ── Filter / sort state ────────────────────────────────────────────────────

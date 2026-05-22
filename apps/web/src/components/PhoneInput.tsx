@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const COUNTRY_CODES = [
+export const COUNTRY_CODES = [
   { code: '+93', flag: '🇦🇫', label: 'Afghanistan' },
   { code: '+355', flag: '🇦🇱', label: 'Albania' },
   { code: '+213', flag: '🇩🇿', label: 'Algeria' },

@@ -22,6 +22,18 @@ const EnvSchema = z.object({
     .transform((v) => v === 'true')
     .default('false'),
 
+  // ── Stripe ──────────────────────────────────────────────────────────────────
+  STRIPE_SECRET_KEY: z.string().default(''),
+  STRIPE_PUBLISHABLE_KEY: z.string().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().default(''),
+
+  // ── AWS SES ─────────────────────────────────────────────────────────────────
+  AWS_REGION: z.string().default('us-east-1'),
+  AWS_ACCESS_KEY_ID: z.string().default(''),
+  AWS_SECRET_ACCESS_KEY: z.string().default(''),
+  SES_FROM_EMAIL: z.string().default('support@corporateregistryservices.ca'),
+  SES_REPLY_TO: z.string().default('support@corporateregistryservices.ca'),
+
   COOKIE_DOMAIN: z.string().default('localhost'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 });

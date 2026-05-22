@@ -26,7 +26,7 @@ function displayLabel(p: PlaceSuggestion): string {
 }
 
 export function AirportInput({
-  value,
+  value: _value,
   onChange,
   confirmedText,
   onConfirm,

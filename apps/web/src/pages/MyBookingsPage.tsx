@@ -54,9 +54,15 @@ function BookingCard({ booking }: { booking: MyBooking }) {
             <span className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${
               booking.status === 'confirmed'
                 ? 'bg-green-tint text-green'
+                : booking.status === 'payment_succeeded_booking_failed'
+                ? 'bg-amber-50 text-amber-600'
                 : 'bg-red-50 text-red-500'
             }`}>
-              {booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+              {booking.status === 'confirmed'
+                ? 'Confirmed'
+                : booking.status === 'payment_succeeded_booking_failed'
+                ? 'Action needed'
+                : 'Cancelled'}
             </span>
           </div>
 
@@ -64,10 +70,17 @@ function BookingCard({ booking }: { booking: MyBooking }) {
           {inbound && <RouteTag slice={inbound} />}
 
           <p className="text-[12px] text-muted">
-            Ref: <span className="font-mono font-semibold text-navy tracking-wide">{booking.bookingRef}</span>
-            <span className="mx-1.5">·</span>
+            {booking.bookingRef
+              ? <>Ref: <span className="font-mono font-semibold text-navy tracking-wide">{booking.bookingRef}</span><span className="mx-1.5">·</span></>
+              : null}
             Booked {formatBookedOn(booking.createdAt)}
           </p>
+
+          {booking.status === 'payment_succeeded_booking_failed' && (
+            <p className="text-[12px] text-amber-600 bg-amber-50 rounded px-2 py-1">
+              Payment received but booking failed — please contact support.
+            </p>
+          )}
         </div>
 
         {/* Right: price + action */}
@@ -82,12 +95,14 @@ function BookingCard({ booking }: { booking: MyBooking }) {
               </p>
             )}
           </div>
-          <Link
-            to={`/booking/${booking.bookingRef}`}
-            className="btn-ghost text-[13px] px-4 py-2 flex-shrink-0"
-          >
-            View details →
-          </Link>
+          {booking.bookingRef && (
+            <Link
+              to={`/booking/${booking.bookingRef}`}
+              className="btn-ghost text-[13px] px-4 py-2 flex-shrink-0"
+            >
+              View details →
+            </Link>
+          )}
         </div>
       </div>
     </article>

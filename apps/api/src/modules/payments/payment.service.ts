@@ -1,0 +1,261 @@
+import Stripe from 'stripe';
+import { Types } from 'mongoose';
+import { DuffelError } from '@duffel/api';
+import type { DuffelPassengerTitle, DuffelPassengerGender } from '@duffel/api/types';
+import { env } from '../../config/env.js';
+import { logger } from '../../lib/logger.js';
+import { duffel } from '../../lib/duffel.js';
+import { Booking } from '../bookings/booking.model.js';
+import { WebhookEvent } from './webhook-event.model.js';
+import { AppError } from '../../middleware/error.handler.js';
+import { sendBookingConfirmation } from '../emails/email.service.js';
+
+// ─── Currency helpers ─────────────────────────────────────────────────────────
+
+const THREE_DECIMAL = new Set(['KWD', 'BHD', 'JOD', 'OMR', 'TND']);
+const ZERO_DECIMAL = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+
+function toSmallestUnit(amount: number, currency: string): number {
+  const c = currency.toUpperCase();
+  if (THREE_DECIMAL.has(c)) return Math.round(amount * 1000);
+  if (ZERO_DECIMAL.has(c)) return Math.round(amount);
+  return Math.round(amount * 100);
+}
+
+function toE164(phone: string): string {
+  const stripped = phone.replace(/[^\d+]/g, '');
+  return stripped.startsWith('+') ? stripped : `+${stripped}`;
+}
+
+// ─── Stripe client ────────────────────────────────────────────────────────────
+
+function getStripe(): Stripe {
+  if (!env.STRIPE_SECRET_KEY) {
+    throw new AppError(503, 'STRIPE_NOT_CONFIGURED', 'Payment processing is not configured');
+  }
+  return new Stripe(env.STRIPE_SECRET_KEY);
+}
+
+// ─── Create payment intent ────────────────────────────────────────────────────
+
+export async function createPaymentIntent(
+  userId: Types.ObjectId,
+  bookingId: string,
+): Promise<{ clientSecret: string }> {
+  const stripe = getStripe();
+
+  const booking = await Booking.findOne({ _id: bookingId, userId });
+  if (!booking) throw new AppError(404, 'BOOKING_NOT_FOUND', 'Booking not found');
+
+  if (booking.status !== 'draft' && booking.status !== 'pending_payment') {
+    throw new AppError(409, 'BOOKING_NOT_PAYABLE', `Booking cannot be paid (status: ${booking.status})`);
+  }
+
+  // Idempotent — if a PaymentIntent was already created, return its secret
+  if (booking.stripePaymentIntentId) {
+    try {
+      const existing = await stripe.paymentIntents.retrieve(booking.stripePaymentIntentId);
+      if (existing.client_secret && existing.status !== 'canceled') {
+        return { clientSecret: existing.client_secret };
+      }
+    } catch {
+      // PI not found or stale — create a fresh one below
+    }
+  }
+
+  const amount = toSmallestUnit(booking.totalAmount, booking.currency);
+  const pi = await stripe.paymentIntents.create({
+    amount,
+    currency: booking.currency.toLowerCase(),
+    metadata: {
+      bookingId,
+      userId: userId.toString(),
+    },
+  });
+
+  if (!pi.client_secret) {
+    throw new AppError(500, 'STRIPE_ERROR', 'Failed to create payment intent');
+  }
+
+  // Atomic CAS: only one concurrent caller wins; the other cancels its PI and returns the winner's secret
+  const updated = await Booking.findOneAndUpdate(
+    { _id: bookingId, status: 'draft' },
+    { stripePaymentIntentId: pi.id, status: 'pending_payment' },
+    { new: true },
+  );
+
+  if (!updated) {
+    await stripe.paymentIntents.cancel(pi.id).catch(() => {});
+    const refreshed = await Booking.findById(bookingId);
+    const winner = await stripe.paymentIntents.retrieve(refreshed!.stripePaymentIntentId!);
+    logger.info({ bookingId, loserPiId: pi.id, winnerPiId: winner.id }, 'Lost PI race — returning winner secret');
+    return { clientSecret: winner.client_secret! };
+  }
+
+  logger.info({ bookingId, piId: pi.id, amount, currency: booking.currency }, 'Payment intent created');
+
+  return { clientSecret: pi.client_secret };
+}
+
+// ─── Webhook handling ─────────────────────────────────────────────────────────
+
+export async function handleWebhookEvent(payload: Buffer, signature: string): Promise<void> {
+  const stripe = getStripe();
+
+  if (!env.STRIPE_WEBHOOK_SECRET) {
+    throw new AppError(503, 'WEBHOOK_NOT_CONFIGURED', 'Webhook secret not configured');
+  }
+
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(payload, signature, env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    throw new AppError(400, 'WEBHOOK_INVALID', `Stripe signature verification failed: ${(err as Error).message}`);
+  }
+
+  // Idempotency — skip already-processed events
+  const already = await WebhookEvent.findOne({ eventId: event.id });
+  if (already) {
+    logger.info({ eventId: event.id, type: event.type }, 'Webhook event already processed');
+    return;
+  }
+  await WebhookEvent.create({ eventId: event.id, processedAt: new Date() });
+
+  logger.info({ eventId: event.id, type: event.type }, 'Processing Stripe webhook event');
+
+  if (event.type === 'payment_intent.succeeded') {
+    await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
+  } else if (event.type === 'payment_intent.payment_failed') {
+    await handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
+  }
+}
+
+// ─── Payment succeeded ────────────────────────────────────────────────────────
+
+async function handlePaymentSucceeded(pi: Stripe.PaymentIntent): Promise<void> {
+  logger.info({ piId: pi.id }, 'Payment succeeded — creating Duffel order');
+
+  const booking = await Booking.findOne({ stripePaymentIntentId: pi.id });
+  if (!booking) {
+    logger.warn({ piId: pi.id }, 'No booking found for payment intent — skipping');
+    return;
+  }
+  if (booking.status === 'confirmed') {
+    logger.info({ bookingId: String(booking._id) }, 'Booking already confirmed — skipping');
+    return;
+  }
+
+  const bookingId = String(booking._id);
+  const snapshot = booking.offerSnapshot;
+  const passengers = booking.passengers as unknown as Array<Record<string, unknown>>;
+
+  try {
+    const rawOffer = await duffel.offers.get(booking.duffelOfferId!);
+    const duffelPassengerIds = rawOffer.data.passengers.map((p) => p.id);
+
+    if (passengers.length !== duffelPassengerIds.length) {
+      throw new Error(
+        `Passenger count mismatch: booking has ${passengers.length}, offer has ${duffelPassengerIds.length}`,
+      );
+    }
+
+    const order = await duffel.orders.create({
+      type: 'instant',
+      selected_offers: [booking.duffelOfferId!],
+      passengers: passengers.map((p, i) => ({
+        id: duffelPassengerIds[i]!,
+        title: p.title as DuffelPassengerTitle,
+        gender: p.gender as DuffelPassengerGender,
+        given_name: (p.firstName ?? p.given_name) as string,
+        family_name: (p.lastName ?? p.family_name) as string,
+        born_on: p.dob instanceof Date
+          ? p.dob.toISOString().slice(0, 10)
+          : (p.dob ?? p.born_on) as string,
+        email: p.email as string,
+        phone_number: toE164(
+          p.phone
+            ? `${(p.phone as { countryCode: string }).countryCode}${(p.phone as { number: string }).number}`
+            : (p.phone_number as string) ?? '',
+        ),
+      })),
+      payments: [
+        {
+          type: 'balance',
+          amount: rawOffer.data.total_amount,
+          currency: rawOffer.data.total_currency,
+        },
+      ],
+    });
+
+    const bookingRef = order.data.booking_reference;
+    const duffelOrderId = order.data.id;
+
+    // Build sliceSummary for backward compat with MyBookingsPage
+    const sliceSummary = snapshot?.slices.map((s) => ({
+      origin: s.origin,
+      destination: s.destination,
+      departureAt: s.departureAt,
+      arrivalAt: s.arrivalAt,
+      airlineName: snapshot.airline,
+      airlineCode: snapshot.airlineCode,
+    })) ?? [];
+
+    await Booking.findByIdAndUpdate(bookingId, {
+      status: 'confirmed',
+      duffelOrderId,
+      bookingRef,
+      paidAt: new Date(),
+      confirmedAt: new Date(),
+      sliceSummary,
+    });
+
+    logger.info({ bookingId, bookingRef, duffelOrderId }, 'Booking confirmed');
+
+    // Send confirmation email (failure doesn't roll back the booking)
+    const recipient = (booking.contactEmail ?? (passengers[0]?.email as string)) || '';
+    if (recipient) {
+      try {
+        await sendBookingConfirmation(recipient, {
+          bookingRef,
+          passengerName: [passengers[0]?.firstName, passengers[0]?.lastName]
+            .filter(Boolean)
+            .join(' '),
+          totalAmount: booking.totalAmount,
+          currency: booking.currency,
+          slices: snapshot?.slices ?? [],
+          airline: snapshot?.airline ?? '',
+          bookingId,
+        });
+        await Booking.findByIdAndUpdate(bookingId, { confirmationEmailSentAt: new Date() });
+      } catch (emailErr) {
+        logger.error({ err: emailErr, bookingId }, 'Confirmation email failed (non-fatal)');
+      }
+    }
+  } catch (err) {
+    const isDuffelError = err instanceof DuffelError;
+    logger.error(
+      { err, piId: pi.id, bookingId, isDuffelError },
+      'Duffel order creation failed after payment',
+    );
+    await Booking.findByIdAndUpdate(bookingId, {
+      status: 'payment_succeeded_booking_failed',
+      failureReason: (err as Error).message,
+      failedAt: new Date(),
+    });
+  }
+}
+
+// ─── Payment failed ───────────────────────────────────────────────────────────
+
+async function handlePaymentFailed(pi: Stripe.PaymentIntent): Promise<void> {
+  logger.info({ piId: pi.id }, 'Payment failed');
+
+  await Booking.findOneAndUpdate(
+    { stripePaymentIntentId: pi.id },
+    {
+      status: 'failed',
+      failureReason: pi.last_payment_error?.message ?? 'Payment declined',
+      failedAt: new Date(),
+    },
+  );
+}

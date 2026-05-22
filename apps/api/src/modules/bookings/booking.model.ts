@@ -1,70 +1,182 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
+// ─── Status ───────────────────────────────────────────────────────────────────
+
+export type BookingStatus =
+  | 'draft'
+  | 'pending_payment'
+  | 'paid'
+  | 'confirmed'
+  | 'failed'
+  | 'cancelled'
+  | 'payment_succeeded_booking_failed';
+
+// ─── Passenger ────────────────────────────────────────────────────────────────
+// Phase 2 uses camelCase. Phase 1 docs stored snake_case — the schema is Mixed
+// so both shapes are accepted. Access Phase 1 fields via type assertion if needed.
+
 export interface IBookingPassenger {
+  type?: 'adult' | 'child' | 'infant_without_seat';
   title: string;
-  given_name: string;
-  family_name: string;
-  born_on: string;
+  firstName?: string;
+  lastName?: string;
+  dob?: Date;
   gender: string;
+  nationality?: string;
+  passportNumber?: string;
+  passportExpiry?: Date;
+  passportIssuingCountry?: string;
   email: string;
-  phone_number: string;
+  phone?: { countryCode: string; number: string };
 }
+
+// ─── Offer snapshot ───────────────────────────────────────────────────────────
+
+export interface IOfferSnapshot {
+  slices: Array<{
+    origin: string;
+    originName?: string;
+    destination: string;
+    destinationName?: string;
+    departureAt: string;
+    arrivalAt: string;
+    durationMinutes?: number;
+    stops?: number;
+    segments?: Array<{
+      flightNumber: string;
+      airlineName: string;
+      airlineCode: string;
+      departureAt: string;
+      arrivalAt: string;
+      origin: string;
+      destination: string;
+    }>;
+  }>;
+  airline: string;
+  airlineCode: string;
+  cabinClass: string;
+}
+
+// ─── Main interface ───────────────────────────────────────────────────────────
 
 export interface IBooking extends Document {
   userId: Types.ObjectId;
-  duffelOrderId: string;
-  bookingRef: string;
-  offerId: string;
-  totalAmount: number;
-  savings: number;
-  currency: string;
-  status: 'confirmed' | 'cancelled';
-  passengers: IBookingPassenger[];
-  sliceSummary: {
+  status: BookingStatus;
+
+  // Duffel
+  duffelOfferId?: string;
+  duffelOrderId?: string;
+  duffelOfferExpiresAt?: Date;
+  pnr?: string;
+  bookingRef?: string;
+
+  // Offer data
+  offerSnapshot?: IOfferSnapshot;
+  // Phase 1 compat — sliceSummary kept so existing /api/me/bookings still serialises
+  sliceSummary?: Array<{
     origin: string;
     destination: string;
     departureAt: string;
     arrivalAt: string;
     airlineName: string;
     airlineCode: string;
-  }[];
+  }>;
+
+  // Passengers (Mixed — see note above)
+  passengers: IBookingPassenger[];
+  contactEmail?: string;
+  contactPhone?: string;
+
+  // Pricing
+  publicPrice: number;
+  memberDiscount: number;
+  totalAmount: number;
+  currency: string;
+  discountPercent: number;
+  savings?: number; // Phase 1 compat alias for memberDiscount
+
+  // Phase 1 compat
+  offerId?: string;
+
+  // Stripe
+  stripePaymentIntentId?: string;
+  stripeChargeId?: string;
+  paidAt?: Date;
+
+  // Confirmation
+  confirmedAt?: Date;
+  confirmationEmailSentAt?: Date;
+
+  // Failure
+  failureReason?: string;
+  failedAt?: Date;
+
   createdAt: Date;
+  updatedAt: Date;
 }
+
+// ─── Schema ───────────────────────────────────────────────────────────────────
+
+// strict:false allows both Phase 1 (snake_case) and Phase 2 (camelCase) passenger shapes
+const passengerSchema = new Schema({}, { strict: false, _id: false });
 
 const bookingSchema = new Schema<IBooking>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    duffelOrderId: { type: String, required: true, unique: true },
-    bookingRef: { type: String, required: true, unique: true, index: true },
-    offerId: { type: String, required: true },
-    totalAmount: { type: Number, required: true },
-    savings: { type: Number, default: 0 },
-    currency: { type: String, required: true },
-    status: { type: String, enum: ['confirmed', 'cancelled'], default: 'confirmed' },
-    passengers: [
-      {
-        title: String,
-        given_name: { type: String, required: true },
-        family_name: { type: String, required: true },
-        born_on: { type: String, required: true },
-        gender: { type: String, required: true },
-        email: { type: String, required: true },
-        phone_number: { type: String, required: true },
-      },
-    ],
-    sliceSummary: [
-      {
-        origin: String,
-        destination: String,
-        departureAt: String,
-        arrivalAt: String,
-        airlineName: String,
-        airlineCode: String,
-      },
-    ],
+
+    status: {
+      type: String,
+      enum: ['draft', 'pending_payment', 'paid', 'confirmed', 'failed', 'cancelled', 'payment_succeeded_booking_failed'],
+      default: 'draft',
+      index: true,
+    },
+
+    // Duffel — sparse so drafts (no orderId yet) don't conflict
+    duffelOfferId: { type: String },
+    duffelOrderId: { type: String, unique: true, sparse: true },
+    duffelOfferExpiresAt: { type: Date },
+    pnr: { type: String },
+    bookingRef: { type: String, unique: true, sparse: true, index: true },
+
+    // Offer snapshot (Mixed for flexibility across phases)
+    offerSnapshot: { type: Schema.Types.Mixed },
+    sliceSummary: { type: [Schema.Types.Mixed] },
+
+    // Passengers — strict:false subdoc accepts Phase 1 (snake_case) + Phase 2 (camelCase)
+    passengers: { type: [passengerSchema], default: [] },
+    contactEmail: { type: String },
+    contactPhone: { type: String },
+
+    // Pricing
+    publicPrice: { type: Number, default: 0 },
+    memberDiscount: { type: Number, default: 0 },
+    totalAmount: { type: Number, default: 0 },
+    currency: { type: String, default: 'KWD' },
+    discountPercent: { type: Number, default: 0 },
+    savings: { type: Number, default: 0 }, // Phase 1 compat
+
+    // Phase 1 compat
+    offerId: { type: String },
+
+    // Stripe
+    stripePaymentIntentId: { type: String, unique: true, sparse: true },
+    stripeChargeId: { type: String },
+    paidAt: { type: Date },
+
+    // Confirmation
+    confirmedAt: { type: Date },
+    confirmationEmailSentAt: { type: Date },
+
+    // Failure
+    failureReason: { type: String },
+    failedAt: { type: Date },
   },
   { timestamps: true },
 );
+
+// Compound indexes for common queries
+bookingSchema.index({ userId: 1, createdAt: -1 });
+bookingSchema.index({ status: 1, createdAt: -1 });
 
 bookingSchema.set('toJSON', {
   transform(_doc, ret) {

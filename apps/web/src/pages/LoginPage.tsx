@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import toast from 'react-hot-toast';
@@ -74,14 +74,14 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
             </div>
             <h3 className="font-bold text-navy text-lg">Check your inbox</h3>
             <p className="text-muted text-sm mt-2">
-              If <strong>{email}</strong> is registered, you'll receive a reset link shortly.
+              If <strong>{email}</strong> is registered, you&apos;ll receive a reset link shortly.
             </p>
             <button onClick={onClose} className="btn-primary w-full mt-6">Done</button>
           </div>
         ) : (
           <>
             <h3 className="font-bold text-navy text-lg mb-1">Reset your password</h3>
-            <p className="text-muted text-sm mb-5">Enter your email and we'll send you a reset link.</p>
+            <p className="text-muted text-sm mb-5">Enter your email and we&apos;ll send you a reset link.</p>
             <form onSubmit={handleSubmit} className="space-y-4">
               <FormField
                 label="Email address"
@@ -108,6 +108,7 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
@@ -125,7 +126,7 @@ export function LoginPage() {
     try {
       setServerError(null);
       await login(data);
-      navigate('/');
+      navigate(searchParams.get('redirect') ?? '/');
     } catch (err) {
       setServerError(
         err instanceof ApiError && err.status === 401
@@ -223,7 +224,7 @@ export function LoginPage() {
               </button>
 
               <p className="text-center text-[14px] text-muted">
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
                 <Link to="/register" className="text-green font-semibold hover:underline">
                   Join free
                 </Link>
@@ -245,7 +246,7 @@ export function LoginPage() {
           <div className="relative space-y-6">
             <blockquote>
               <p className="text-white text-xl font-serif italic leading-relaxed">
-                "Finally a travel platform that feels like it was built for Gulf travellers."
+                &ldquo;Finally a travel platform that feels like it was built for Gulf travellers.&rdquo;
               </p>
               <footer className="mt-4">
                 <p className="text-white font-semibold">Sara Al-Mutawa</p>

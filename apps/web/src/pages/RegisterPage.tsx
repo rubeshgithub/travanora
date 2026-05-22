@@ -430,7 +430,7 @@ export function RegisterPage() {
         <div className="relative space-y-6">
           <blockquote>
             <p className="text-white text-xl font-serif italic leading-relaxed">
-              "Saved over KD 80 on my Dubai trip. The discount just works — no hoops."
+              &ldquo;Saved over KD 80 on my Dubai trip. The discount just works — no hoops.&rdquo;
             </p>
             <footer className="mt-4">
               <p className="text-white font-semibold">Ahmad Al-Salem</p>
