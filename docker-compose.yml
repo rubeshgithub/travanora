@@ -1,0 +1,15 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: travanora-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: travanora
+
+volumes:
+  mongo-data:
+    driver: local

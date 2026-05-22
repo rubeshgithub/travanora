@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS design tokens (also available for arbitrary CSS) ──────────────────── */
+:root {
+  --green: #FFBF00;
+  --green-deep: #E6AC00;
+  --green-soft: #FFF7CC;
+  --green-tint: #FFFDF0;
+  --amber-ink: #392A00;
+  --navy: #0a2540;
+  --navy-2: #173456;
+  --muted: #5b6b82;
+  --line: #c8d0db;
+  --bg: #f3f5f9;
+  --accent-yellow: #ffd84d;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    @apply font-sans antialiased;
+    background-color: var(--bg);
+    color: var(--navy);
+  }
+
+  * {
+    @apply box-border;
+  }
+}
+
+/* ── Reusable component classes ────────────────────────────────────────────── */
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-green font-semibold
+           px-6 py-2.5 rounded-pill
+           transition-all duration-200
+           hover:bg-green-deep hover:-translate-y-px hover:shadow-green-sm
+           focus:outline-none focus:ring-4 focus:ring-green/30
+           disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none;
+    color: var(--amber-ink);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           bg-white text-navy font-semibold
+           border border-line
+           px-6 py-2.5 rounded-pill
+           transition-all duration-200
+           hover:border-gray-300 hover:shadow-sm
+           focus:outline-none focus:ring-4 focus:ring-navy/10
+           disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3
+           border border-line rounded-input
+           text-[15px] font-medium text-navy bg-white
+           placeholder:text-muted/60
+           transition-all duration-200
+           focus:outline-none focus:border-green focus:ring-4 focus:ring-green/10;
+  }
+
+  .input-field-error {
+    @apply border-red-400 focus:border-red-400 focus:ring-red-100;
+  }
+
+  .label-text {
+    @apply block text-[13px] font-semibold uppercase tracking-wide text-muted mb-1.5;
+  }
+
+  .card {
+    @apply bg-white border border-line rounded-card shadow-card
+           transition-all duration-300
+           hover:shadow-card-hover hover:-translate-y-1 hover:border-green/20;
+  }
+
+  .section-eyebrow {
+    @apply inline-flex items-center gap-1.5
+           text-[13px] font-semibold text-green
+           bg-green-soft px-3 py-1 rounded-pill;
+  }
+
+  .badge-member {
+    @apply inline-flex items-center gap-1
+           text-[11px] font-bold text-green
+           bg-green-soft px-2 py-0.5 rounded-pill;
+  }
+
+  .badge-saved {
+    @apply inline-flex items-center gap-1
+           text-[11px] font-bold text-green-deep
+           bg-accent-yellow/30 px-2 py-0.5 rounded-pill;
+  }
+}
