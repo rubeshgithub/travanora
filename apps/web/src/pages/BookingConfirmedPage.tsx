@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { fetchBookingById } from '@/features/bookings/booking.api.js';
 import { formatPrice, formatDuration } from '@/lib/flightUtils.js';
 import { Logo } from '@/components/Logo.js';
@@ -275,6 +275,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         </Link>
       </header>
       {children}
+      <Toaster position="top-right" toastOptions={{ duration: 6000, style: { fontFamily: 'DM Sans, sans-serif', fontSize: '14px', fontWeight: '500', borderRadius: '12px', border: '1.5px solid #e7eaf0', boxShadow: '0 8px 24px rgba(10, 37, 64, 0.10)' }, success: { iconTheme: { primary: '#00b67a', secondary: '#fff' } } }} />
     </div>
   );
 }
