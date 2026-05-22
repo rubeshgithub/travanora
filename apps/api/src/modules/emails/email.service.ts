@@ -16,6 +16,7 @@ const FROM_ADDRESS = `Travanora <${env.SES_FROM_EMAIL}>`;
 export interface BookingConfirmationData {
   bookingRef: string;
   passengerName: string;
+  passengers: Array<{ firstName: string; lastName: string; dob?: string }>;
   totalAmount: number;
   currency: string;
   slices: Array<{
@@ -47,6 +48,10 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function formatDob(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-KW', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function buildHtml(data: BookingConfirmationData): string {
   const sliceRows = data.slices
     .map(
@@ -57,6 +62,20 @@ function buildHtml(data: BookingConfirmationData): string {
         </td>
         <td style="padding:8px 0;border-bottom:1px solid #f3f4f6;color:#0a2540;font-size:13px;text-align:right;font-weight:600;">
           ${formatDateTime(s.departureAt)}
+        </td>
+      </tr>`,
+    )
+    .join('');
+
+  const passengerRows = data.passengers
+    .map(
+      (p, i) => `
+      <tr>
+        <td style="padding:6px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:12px;">
+          ${data.passengers.length > 1 ? `Passenger ${i + 1}` : 'Passenger'}
+        </td>
+        <td style="padding:6px 0;border-bottom:1px solid #f3f4f6;color:#0a2540;font-size:13px;text-align:right;font-weight:600;">
+          ${p.firstName} ${p.lastName}${p.dob ? ` <span style="color:#9ca3af;font-weight:400;font-size:12px;">(DOB: ${formatDob(p.dob)})</span>` : ''}
         </td>
       </tr>`,
     )
@@ -93,6 +112,16 @@ function buildHtml(data: BookingConfirmationData): string {
             </tr>
             ${sliceRows}
           </table>
+
+          ${data.passengers.length > 0 ? `
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+            <tr>
+              <td colspan="2" style="padding-bottom:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#6b7280;">
+                ${data.passengers.length === 1 ? 'Passenger' : 'Passengers'}
+              </td>
+            </tr>
+            ${passengerRows}
+          </table>` : ''}
 
           <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;padding-top:16px;">
             <tr>

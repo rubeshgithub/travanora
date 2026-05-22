@@ -220,6 +220,13 @@ async function handlePaymentSucceeded(pi: Stripe.PaymentIntent): Promise<void> {
           passengerName: [passengers[0]?.firstName, passengers[0]?.lastName]
             .filter(Boolean)
             .join(' '),
+          passengers: passengers.map((p) => ({
+            firstName: (p.firstName ?? p.given_name ?? '') as string,
+            lastName: (p.lastName ?? p.family_name ?? '') as string,
+            dob: p.dob instanceof Date
+              ? p.dob.toISOString().slice(0, 10)
+              : (p.dob ?? p.born_on) as string | undefined,
+          })),
           totalAmount: booking.totalAmount,
           currency: booking.currency,
           slices: snapshot?.slices ?? [],

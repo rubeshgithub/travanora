@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { fetchBookingById } from '@/features/bookings/booking.api.js';
 import { formatPrice, formatDuration } from '@/lib/flightUtils.js';
 import { Logo } from '@/components/Logo.js';
@@ -21,6 +22,7 @@ export function BookingConfirmedPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const mountedAt = useRef(Date.now());
+  const prevStatus = useRef<string | undefined>(undefined);
 
   const { data: booking, isPending, error, refetch } = useQuery({
     queryKey: ['booking-confirmed', bookingId],
@@ -30,6 +32,14 @@ export function BookingConfirmedPage() {
     gcTime: 0,
     retry: false,
   });
+
+  // Toast when webhook confirms the booking while we're polling
+  useEffect(() => {
+    if (prevStatus.current === 'pending_payment' && booking?.status === 'confirmed') {
+      toast.success('Your booking is confirmed!', { duration: 6000 });
+    }
+    prevStatus.current = booking?.status;
+  }, [booking?.status]);
 
   // Poll every 2 s while pending, stop after 60 s timeout
   useEffect(() => {
