@@ -34,6 +34,11 @@ const EnvSchema = z.object({
   SES_FROM_EMAIL: z.string().default('support@corporateregistryservices.ca'),
   SES_REPLY_TO: z.string().default('support@corporateregistryservices.ca'),
 
+  // ── PII encryption ──────────────────────────────────────────────────────────
+  // 32-byte hex key for AES-256-GCM passport number encryption.
+  // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  PII_ENCRYPTION_KEY: z.string().default(''),
+
   APP_URL: z.string().default('http://localhost:5173'),
   COOKIE_DOMAIN: z.string().default('localhost'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),

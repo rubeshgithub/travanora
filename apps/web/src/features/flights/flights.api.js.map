@@ -1,0 +1,1 @@
+{"version":3,"file":"flights.api.js","sourceRoot":"","sources":["flights.api.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,GAAG,EAAE,MAAM,cAAc,CAAC;AAGnC,MAAM,CAAC,KAAK,UAAU,aAAa,CAAC,KAAwB;IAC1D,OAAO,GAAG,CAAC,IAAI,CAAuB,qBAAqB,EAAE,KAAK,CAAC,CAAC;AACtE,CAAC"}

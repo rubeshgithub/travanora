@@ -1,0 +1,1 @@
+{"version":3,"file":"useFlightSearch.js","sourceRoot":"","sources":["useFlightSearch.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,WAAW,EAAE,MAAM,uBAAuB,CAAC;AACpD,OAAO,EAAE,aAAa,EAAE,MAAM,kBAAkB,CAAC;AAGjD,MAAM,UAAU,eAAe;IAC7B,OAAO,WAAW,CAAiD;QACjE,UAAU,EAAE,aAAa;KAC1B,CAAC,CAAC;AACL,CAAC"}

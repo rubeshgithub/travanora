@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { NormalisedOfferSchema } from './flight.schema.js';
+import { TitleEnum, GenderEnum, passengerCoreSchema } from './passenger.schema.js';
 
-// ─── Passenger ────────────────────────────────────────────────────────────────
+// Re-export for any code that already imports Title/Gender from booking.schema
+export { TitleEnum, GenderEnum };
+export type { Title, Gender } from './passenger.schema.js';
 
-export const TitleEnum = z.enum(['mr', 'ms', 'mrs', 'miss', 'dr']);
-export const GenderEnum = z.enum(['m', 'f']);
+// ─── Passenger (Phase 1 — snake_case, used by legacy order creation) ─────────
 
 export const PassengerInputSchema = z.object({
   title: TitleEnum,
@@ -29,8 +31,6 @@ export const PassengerInputSchema = z.object({
 });
 
 export type PassengerInput = z.infer<typeof PassengerInputSchema>;
-export type Title = z.infer<typeof TitleEnum>;
-export type Gender = z.infer<typeof GenderEnum>;
 
 // ─── Create order request ─────────────────────────────────────────────────────
 
@@ -130,42 +130,19 @@ function phoneLength(code: string): { min: number; max: number } {
   return PHONE_LENGTHS[code] ?? { min: 6, max: 15 };
 }
 
-// Exported so the UI can show the expected digit count next to the field
 export function getPhoneLength(countryCode: string): { min: number; max: number } {
   return phoneLength(countryCode);
 }
 
-// ─── Phase 2 — Passenger (camelCase, with passport fields) ────────────────────
+// ─── Phase 2 — Passenger (camelCase, extends passengerCoreSchema) ─────────────
 
 export const PassengerTypeEnum = z.enum(['adult', 'child', 'infant_without_seat']);
 
-export const BookingPassengerSchema = z.object({
+export const BookingPassengerSchema = passengerCoreSchema.extend({
   type: PassengerTypeEnum.default('adult'),
-  title: TitleEnum,
-  firstName: z.string().min(1, 'First name is required').max(50),
-  lastName: z.string().min(1, 'Last name is required').max(50),
-  dob: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD'),
-  gender: GenderEnum,
-  nationality: z.string().length(2, 'Use ISO 2-letter country code'),
-  // Empty string → undefined so closing the collapsible without typing doesn't fail
-  passportNumber: z.preprocess(
-    (v) => (v === '' ? undefined : v),
-    z.string().min(1).max(20).optional(),
-  ),
-  passportExpiry: z.preprocess(
-    (v) => (v === '' ? undefined : v),
-    z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  ),
-  passportIssuingCountry: z.preprocess(
-    (v) => (v === '' ? undefined : v),
-    z.string().length(2).optional(),
-  ),
   email: z.string().email('Invalid email address'),
   phone: z.object({
     countryCode: z.string().min(1, 'Country code required'),
-    // Strip spaces/dashes before length check
     number: z.preprocess(
       (v) => (typeof v === 'string' ? v.replace(/\D/g, '') : v),
       z.string().max(15),
@@ -183,18 +160,10 @@ export const BookingPassengerSchema = z.object({
     }
   }),
 }).superRefine((data, ctx) => {
+  // Core DOB range validation (past, ≤120 yrs) is handled in passengerCoreSchema.
+  // Only passenger-type age rules remain here.
   if (!data.dob || !/^\d{4}-\d{2}-\d{2}$/.test(data.dob)) return;
-  const dob = new Date(data.dob);
-  const now = new Date();
-  if (dob >= now) {
-    ctx.addIssue({ code: 'custom', message: 'Date of birth must be in the past', path: ['dob'] });
-    return;
-  }
-  const ageYears = (now.getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-  if (ageYears > 120) {
-    ctx.addIssue({ code: 'custom', message: 'Invalid date of birth', path: ['dob'] });
-    return;
-  }
+  const ageYears = (new Date().getTime() - new Date(data.dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000);
   const type = data.type ?? 'adult';
   if (type === 'adult' && ageYears < 12) {
     ctx.addIssue({ code: 'custom', message: 'Adult passengers must be 12 years or older', path: ['dob'] });
