@@ -33,13 +33,18 @@ export function BookingConfirmedPage() {
     retry: false,
   });
 
-  // Toast when webhook confirms the booking while we're polling
+  // Toast once when booking reaches confirmed — works whether the webhook
+  // fired before we landed or while we were polling on this page.
   useEffect(() => {
-    if (prevStatus.current === 'pending_payment' && booking?.status === 'confirmed') {
-      toast.success('Your booking is confirmed!', { duration: 6000 });
+    if (booking?.status === 'confirmed') {
+      const key = `booking-toast-${bookingId}`;
+      if (!sessionStorage.getItem(key)) {
+        toast.success('Your booking is confirmed!', { duration: 6000 });
+        sessionStorage.setItem(key, '1');
+      }
     }
     prevStatus.current = booking?.status;
-  }, [booking?.status]);
+  }, [booking?.status, bookingId]);
 
   // Poll every 2 s while pending, stop after 60 s timeout
   useEffect(() => {
