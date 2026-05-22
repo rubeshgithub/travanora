@@ -13,6 +13,9 @@ import bookingsV2Router from './modules/bookings/bookings.router.js';
 import placesRouter from './modules/places/places.router.js';
 import paymentsRouter from './modules/payments/payment.router.js';
 import { webhookHandler } from './modules/payments/payment.controller.js';
+import accountRouter from './modules/account/account.router.js';
+import passengersRouter from './modules/passengers/passenger.router.js';
+import dashboardRouter from './modules/dashboard/dashboard.router.js';
 
 const app: Express = express();
 
@@ -58,6 +61,9 @@ app.use('/api/flights', bookingsRouter);   // Phase 1: /api/flights/offers/:id +
 app.use('/api/bookings', bookingsV2Router); // Phase 2: /api/bookings/draft + /api/bookings/:id
 app.use('/api/payments', paymentsRouter);   // Phase 2: /api/payments/create-intent (webhook is above)
 app.use('/api/places', placesRouter);
+app.use('/api/account', accountRouter);
+app.use('/api/passengers', passengersRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 // ─── Error handler (must be last) ─────────────────────────────────────────────
 app.use(errorHandler);
