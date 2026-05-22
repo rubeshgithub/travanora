@@ -1,1 +1,0 @@
-{"version":3,"file":"SearchForm.d.ts","sourceRoot":"","sources":["SearchForm.tsx"],"names":[],"mappings":"AAGA,OAAO,EAAsB,KAAK,iBAAiB,EAAE,MAAM,mBAAmB,CAAC;AAgB/E,UAAU,eAAe;IACvB,QAAQ,EAAE,CAAC,KAAK,EAAE,iBAAiB,KAAK,IAAI,CAAC;IAC7C,SAAS,EAAE,OAAO,CAAC;CACpB;AAED,wBAAgB,UAAU,CAAC,EAAE,QAAQ,EAAE,SAAS,EAAE,EAAE,eAAe,2CA4NlE"}

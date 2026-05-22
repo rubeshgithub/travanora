@@ -1,1 +1,0 @@
-{"version":3,"file":"useMyBookings.js","sourceRoot":"","sources":["useMyBookings.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,QAAQ,EAAE,MAAM,uBAAuB,CAAC;AACjD,OAAO,EAAE,eAAe,EAAE,MAAM,kBAAkB,CAAC;AAEnD,MAAM,UAAU,aAAa;IAC3B,OAAO,QAAQ,CAAC;QACd,QAAQ,EAAE,CAAC,aAAa,CAAC;QACzB,OAAO,EAAE,eAAe;KACzB,CAAC,CAAC;AACL,CAAC"}

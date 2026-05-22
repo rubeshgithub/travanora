@@ -1,2 +1,0 @@
-export declare function useBookingById(bookingId: string | undefined): import("@tanstack/react-query").UseQueryResult<import("./booking.api.js").BookingDetailV2, Error>;
-//# sourceMappingURL=useBookingById.d.ts.map
