@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { User } from './user.model.js';
 import { Member } from './member.model.js';
 import { RefreshToken } from './refresh-token.model.js';
@@ -10,6 +11,9 @@ import {
   getRefreshTokenExpiry,
 } from '../../lib/jwt.js';
 import { AppError } from '../../middleware/error.handler.js';
+import { sendVerificationEmail, sendPasswordResetEmail, sendPasswordChangedEmail } from '../emails/email.service.js';
+import { env } from '../../config/env.js';
+import { logger } from '../../lib/logger.js';
 import type { RegisterInput, LoginInput } from '@travanora/shared';
 import type { Types } from 'mongoose';
 
@@ -31,6 +35,9 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
   const user = await User.create({
     email: input.email,
     passwordHash,
@@ -41,6 +48,8 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
     phone: input.phone,
     city: input.city,
     marketingOptIn: input.marketingOptIn,
+    emailVerificationToken: verificationToken,
+    emailVerificationExpires: verificationExpires,
   });
 
   const member = await Member.create({
@@ -50,6 +59,11 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
     travelFrequency: input.travelFrequency,
     travelPurpose: input.travelPurpose,
   });
+
+  const verificationUrl = `${env.APP_URL}/verify-email?token=${verificationToken}`;
+  sendVerificationEmail(input.email, input.firstName, verificationUrl).catch((err) =>
+    logger.error({ err, email: input.email }, 'Registration verification email failed (non-fatal)'),
+  );
 
   return issueTokens(user._id as Types.ObjectId, user.toJSON() as Record<string, unknown>, member.toJSON() as Record<string, unknown>, false);
 }
@@ -150,6 +164,65 @@ export async function getMe(userId: string) {
   if (!member) throw new AppError(500, 'MEMBER_NOT_FOUND', 'Member profile missing');
 
   return { user: user.toJSON(), member: member.toJSON() };
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) return; // don't leak whether the email exists
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await User.findByIdAndUpdate(user._id, {
+    passwordResetToken: resetToken,
+    passwordResetExpires: resetExpires,
+  });
+
+  const resetUrl = `${env.APP_URL}/reset-password?token=${resetToken}`;
+  sendPasswordResetEmail(user.email, user.firstName, resetUrl).catch((err) =>
+    logger.error({ err, email }, 'Password reset email failed (non-fatal)'),
+  );
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const user = await User.findOne({
+    passwordResetToken: token,
+    passwordResetExpires: { $gt: new Date() },
+  }).select('+passwordResetToken +passwordResetExpires');
+
+  if (!user) {
+    throw new AppError(400, 'INVALID_TOKEN', 'Reset link is invalid or has expired');
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+
+  await User.findByIdAndUpdate(user._id, {
+    passwordHash,
+    $unset: { passwordResetToken: 1, passwordResetExpires: 1 },
+  });
+
+  // Revoke all existing refresh tokens so old sessions can't continue
+  await RefreshToken.updateMany({ userId: user._id, revokedAt: { $exists: false } }, { revokedAt: new Date() });
+
+  sendPasswordChangedEmail(user.email, user.firstName).catch((err) =>
+    logger.error({ err, email: user.email }, 'Password changed email failed (non-fatal)'),
+  );
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  const user = await User.findOne({
+    emailVerificationToken: token,
+    emailVerificationExpires: { $gt: new Date() },
+  }).select('+emailVerificationToken +emailVerificationExpires');
+
+  if (!user) {
+    throw new AppError(400, 'INVALID_TOKEN', 'Verification link is invalid or has expired');
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    emailVerified: true,
+    $unset: { emailVerificationToken: 1, emailVerificationExpires: 1 },
+  });
 }
 
 async function issueTokens(

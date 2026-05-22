@@ -1,11 +1,26 @@
 import { Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Navbar } from './components/Navbar.js';
+import { useAuthStore } from '@/features/auth/auth.store.js';
+
+function UnverifiedBanner() {
+  const user = useAuthStore((s) => s.user);
+  if (!user || user.emailVerified) return null;
+
+  return (
+    <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-center">
+      <p className="text-amber-700 text-[13px] font-medium">
+        Please verify your email address — check your inbox for a link from Travanora.
+      </p>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <div className="min-h-screen bg-surface flex flex-col">
       <Navbar />
+      <UnverifiedBanner />
       <div className="flex-1">
         <Outlet />
       </div>

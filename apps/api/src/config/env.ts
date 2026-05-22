@@ -34,6 +34,7 @@ const EnvSchema = z.object({
   SES_FROM_EMAIL: z.string().default('support@corporateregistryservices.ca'),
   SES_REPLY_TO: z.string().default('support@corporateregistryservices.ca'),
 
+  APP_URL: z.string().default('http://localhost:5173'),
   COOKIE_DOMAIN: z.string().default('localhost'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 });

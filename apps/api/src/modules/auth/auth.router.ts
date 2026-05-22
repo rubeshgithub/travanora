@@ -9,6 +9,8 @@ router.post('/register', asyncHandler(controller.registerHandler));
 router.post('/login', authLimiter, asyncHandler(controller.loginHandler));
 router.post('/refresh', asyncHandler(controller.refreshHandler));
 router.post('/logout', asyncHandler(controller.logoutHandler));
+router.get('/verify-email', asyncHandler(controller.verifyEmailHandler));
 router.post('/forgot-password', asyncHandler(controller.forgotPasswordHandler));
+router.post('/reset-password', asyncHandler(controller.resetPasswordHandler));
 
 export default router;

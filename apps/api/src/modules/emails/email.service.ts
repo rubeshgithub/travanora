@@ -11,6 +11,8 @@ const ses = new SESv2Client({
   },
 });
 
+const FROM_ADDRESS = `Travanora <${env.SES_FROM_EMAIL}>`;
+
 export interface BookingConfirmationData {
   bookingRef: string;
   passengerName: string;
@@ -121,6 +123,236 @@ function buildHtml(data: BookingConfirmationData): string {
 </html>`;
 }
 
+export async function sendPasswordChangedEmail(
+  recipient: string,
+  firstName: string,
+): Promise<void> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) return;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+      <tr>
+        <td style="background:#0a2540;padding:24px 32px;">
+          <div style="font-size:22px;font-weight:800;color:#FFBF00;letter-spacing:-0.5px;">Travanora</div>
+          <div style="margin-top:4px;color:#94a3b8;font-size:13px;">Security notice</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:32px;">
+          <p style="margin:0 0 6px;color:#6b7280;font-size:14px;">Hi ${firstName},</p>
+          <p style="margin:0 0 24px;color:#0a2540;font-size:17px;font-weight:700;">Your password has been changed</p>
+          <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+            This is a confirmation that the password for your Travanora account was successfully updated.
+          </p>
+          <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+            If you made this change, no further action is needed.
+            If you did <strong>not</strong> make this change, please contact us immediately at
+            <a href="mailto:${env.SES_REPLY_TO}" style="color:#00b67a;text-decoration:none;">${env.SES_REPLY_TO}</a>.
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+          <span style="color:#9ca3af;font-size:12px;">
+            Travanora · <a href="mailto:${env.SES_REPLY_TO}" style="color:#FFBF00;text-decoration:none;">${env.SES_REPLY_TO}</a>
+          </span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  try {
+    const cmd = new SendEmailCommand({
+      FromEmailAddress: FROM_ADDRESS,
+      ReplyToAddresses: [env.SES_REPLY_TO],
+      Destination: { ToAddresses: [recipient] },
+      Content: {
+        Simple: {
+          Subject: { Data: 'Your Travanora password was changed', Charset: 'UTF-8' },
+          Body: { Html: { Data: html, Charset: 'UTF-8' } },
+        },
+      },
+    });
+    const result = await ses.send(cmd);
+    await EmailLog.create({ recipient, template: 'password_changed', sentAt: new Date(), sesMessageId: result.MessageId });
+    logger.info({ recipient, messageId: result.MessageId }, 'Password changed email sent');
+  } catch (err) {
+    await EmailLog.create({ recipient, template: 'password_changed', sentAt: new Date(), error: (err as Error).message }).catch(() => undefined);
+    logger.error({ err, recipient }, 'Failed to send password changed email');
+  }
+}
+
+export async function sendPasswordResetEmail(
+  recipient: string,
+  firstName: string,
+  resetUrl: string,
+): Promise<void> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) {
+    logger.warn({ recipient }, 'AWS credentials not configured — skipping password reset email');
+    return;
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+      <tr>
+        <td style="background:#0a2540;padding:24px 32px;">
+          <div style="font-size:22px;font-weight:800;color:#FFBF00;letter-spacing:-0.5px;">Travanora</div>
+          <div style="margin-top:4px;color:#94a3b8;font-size:13px;">Password reset</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:32px;">
+          <p style="margin:0 0 6px;color:#6b7280;font-size:14px;">Hi ${firstName},</p>
+          <p style="margin:0 0 24px;color:#0a2540;font-size:17px;font-weight:700;">Reset your Travanora password</p>
+          <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+            We received a request to reset your password. Click the button below to choose a new one.
+            This link expires in 1 hour.
+          </p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr>
+              <td style="background:#00b67a;border-radius:8px;padding:14px 28px;">
+                <a href="${resetUrl}" style="color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;display:block;">
+                  Reset my password →
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">
+            If you didn&apos;t request this, you can safely ignore this email — your password won&apos;t change.
+            <br/>Or copy this link: <span style="color:#0a2540;word-break:break-all;">${resetUrl}</span>
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+          <span style="color:#9ca3af;font-size:12px;">
+            Travanora · <a href="mailto:${env.SES_REPLY_TO}" style="color:#FFBF00;text-decoration:none;">${env.SES_REPLY_TO}</a>
+          </span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  try {
+    const cmd = new SendEmailCommand({
+      FromEmailAddress: FROM_ADDRESS,
+      ReplyToAddresses: [env.SES_REPLY_TO],
+      Destination: { ToAddresses: [recipient] },
+      Content: {
+        Simple: {
+          Subject: { Data: 'Reset your Travanora password', Charset: 'UTF-8' },
+          Body: { Html: { Data: html, Charset: 'UTF-8' } },
+        },
+      },
+    });
+
+    const result = await ses.send(cmd);
+    await EmailLog.create({ recipient, template: 'password_reset', sentAt: new Date(), sesMessageId: result.MessageId });
+    logger.info({ recipient, messageId: result.MessageId }, 'Password reset email sent');
+  } catch (err) {
+    await EmailLog.create({ recipient, template: 'password_reset', sentAt: new Date(), error: (err as Error).message }).catch(() => undefined);
+    logger.error({ err, recipient }, 'Failed to send password reset email');
+    throw err;
+  }
+}
+
+export async function sendVerificationEmail(
+  recipient: string,
+  firstName: string,
+  verificationUrl: string,
+): Promise<void> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) {
+    logger.warn({ recipient }, 'AWS credentials not configured — skipping verification email');
+    return;
+  }
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+      <tr>
+        <td style="background:#0a2540;padding:24px 32px;">
+          <div style="font-size:22px;font-weight:800;color:#FFBF00;letter-spacing:-0.5px;">Travanora</div>
+          <div style="margin-top:4px;color:#94a3b8;font-size:13px;">Welcome aboard</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:32px;">
+          <p style="margin:0 0 6px;color:#6b7280;font-size:14px;">Hi ${firstName},</p>
+          <p style="margin:0 0 24px;color:#0a2540;font-size:17px;font-weight:700;">Welcome to Travanora! Please verify your email.</p>
+          <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6;">
+            Click the button below to confirm your email address and activate your account.
+            This link expires in 24 hours.
+          </p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr>
+              <td style="background:#00b67a;border-radius:8px;padding:14px 28px;">
+                <a href="${verificationUrl}" style="color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;display:block;">
+                  Verify my email →
+                </a>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">
+            If you didn&apos;t create a Travanora account, you can safely ignore this email.
+            <br/>Or copy this link: <span style="color:#0a2540;word-break:break-all;">${verificationUrl}</span>
+          </p>
+        </td>
+      </tr>
+      <tr>
+        <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+          <span style="color:#9ca3af;font-size:12px;">
+            Travanora · <a href="mailto:${env.SES_REPLY_TO}" style="color:#FFBF00;text-decoration:none;">${env.SES_REPLY_TO}</a>
+          </span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+
+  try {
+    const cmd = new SendEmailCommand({
+      FromEmailAddress: FROM_ADDRESS,
+      ReplyToAddresses: [env.SES_REPLY_TO],
+      Destination: { ToAddresses: [recipient] },
+      Content: {
+        Simple: {
+          Subject: { Data: 'Verify your Travanora email address', Charset: 'UTF-8' },
+          Body: { Html: { Data: html, Charset: 'UTF-8' } },
+        },
+      },
+    });
+
+    const result = await ses.send(cmd);
+    await EmailLog.create({ recipient, template: 'email_verification', sentAt: new Date(), sesMessageId: result.MessageId });
+    logger.info({ recipient, messageId: result.MessageId }, 'Verification email sent');
+  } catch (err) {
+    await EmailLog.create({ recipient, template: 'email_verification', sentAt: new Date(), error: (err as Error).message }).catch(() => undefined);
+    logger.error({ err, recipient }, 'Failed to send verification email');
+  }
+}
+
 export async function sendBookingConfirmation(
   recipient: string,
   data: BookingConfirmationData,
@@ -135,7 +367,7 @@ export async function sendBookingConfirmation(
 
   try {
     const cmd = new SendEmailCommand({
-      FromEmailAddress: env.SES_FROM_EMAIL,
+      FromEmailAddress: FROM_ADDRESS,
       ReplyToAddresses: [env.SES_REPLY_TO],
       Destination: { ToAddresses: [recipient] },
       Content: {

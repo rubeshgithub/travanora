@@ -9,6 +9,8 @@ import { BookingPassengersPage } from './pages/BookingPassengersPage.js';
 import { BookingReviewPage } from './pages/BookingReviewPage.js';
 import { BookingPaymentPage } from './pages/BookingPaymentPage.js';
 import { BookingConfirmedPage } from './pages/BookingConfirmedPage.js';
+import { VerifyEmailPage } from './pages/VerifyEmailPage.js';
+import { ResetPasswordPage } from './pages/ResetPasswordPage.js';
 import { RequireAuth } from './components/RequireAuth.js';
 
 export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
@@ -24,6 +26,8 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
   // Auth pages — full-screen layout
   { path: '/register', element: <RegisterPage /> },
   { path: '/login', element: <LoginPage /> },
+  { path: '/verify-email', element: <VerifyEmailPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   // Phase 2 booking flow — focused checkout layout
   {
     path: '/book/:offerId',

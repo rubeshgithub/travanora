@@ -134,6 +134,19 @@ export const ForgotPasswordSchema = z.object({
 
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 
+// ─── Reset password ───────────────────────────────────────────────────────────
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: passwordSchema,
+  confirmPassword: z.string().min(1, 'Please confirm your password'),
+}).refine((d) => d.password === d.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+});
+
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
+
 // ─── API response shapes ──────────────────────────────────────────────────────
 
 export const UserResponseSchema = z.object({

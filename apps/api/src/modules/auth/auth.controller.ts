@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
-import { RegisterSchema, LoginSchema, ForgotPasswordSchema } from '@travanora/shared';
+import { RegisterSchema, LoginSchema, ForgotPasswordSchema, ResetPasswordSchema } from '@travanora/shared';
 import * as authService from './auth.service.js';
 import { env } from '../../config/env.js';
-import { logger } from '../../lib/logger.js';
 import { AppError } from '../../middleware/error.handler.js';
 
 const REFRESH_COOKIE = 'refreshToken';
@@ -75,12 +74,26 @@ export async function logoutHandler(req: Request, res: Response) {
   return res.json({ ok: true });
 }
 
+export async function verifyEmailHandler(req: Request, res: Response) {
+  const { token } = req.query as { token?: string };
+  if (!token || typeof token !== 'string') {
+    throw new AppError(400, 'MISSING_TOKEN', 'Verification token is required');
+  }
+  await authService.verifyEmail(token);
+  return res.json({ ok: true, message: 'Email verified successfully' });
+}
+
 export async function forgotPasswordHandler(req: Request, res: Response) {
   const { email } = ForgotPasswordSchema.parse(req.body);
-  // Phase 1 stub — real email sending in Phase 2
-  logger.info({ email }, '[STUB] Forgot password requested');
-  // Always return 200 to avoid leaking whether email exists
-  return res.json({ ok: true, message: 'If that email exists, a reset link has been sent.' });
+  await authService.forgotPassword(email);
+  // Always return 200 to avoid leaking whether the email exists
+  return res.json({ ok: true, message: 'If that email is registered, a reset link has been sent.' });
+}
+
+export async function resetPasswordHandler(req: Request, res: Response) {
+  const { token, password } = ResetPasswordSchema.parse(req.body);
+  await authService.resetPassword(token, password);
+  return res.json({ ok: true, message: 'Password updated successfully. Please sign in.' });
 }
 
 export async function meHandler(req: Request, res: Response) {
