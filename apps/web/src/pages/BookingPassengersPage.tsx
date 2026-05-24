@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
 import { BookingPassengerSchema, getPhoneLength, type BookingPassenger } from '@travanora/shared';
-import type { FieldErrors } from 'react-hook-form';
+import type { FieldErrors, UseFormSetValue } from 'react-hook-form';
 import { useOffer } from '@/features/bookings/useOffer.js';
 import { useBookingDraft } from '@/features/bookings/useBookingDraft.js';
 import { useBookingById } from '@/features/bookings/useBookingById.js';
@@ -16,6 +16,9 @@ import { COUNTRIES } from '@/lib/countries.js';
 import { COUNTRY_CODES } from '@/components/PhoneInput.js';
 import { BookingSidebar } from '@/components/BookingSidebar.js';
 import { Logo } from '@/components/Logo.js';
+import { usePassengers } from '@/features/passengers/usePassengers.js';
+import type { SavedPassenger } from '@/features/passengers/passenger.api.js';
+import { useAuthStore } from '@/features/auth/auth.store.js';
 
 // ── Form schema ────────────────────────────────────────────────────────────────
 
@@ -73,12 +76,15 @@ export function BookingPassengersPage() {
   const { data, isPending, error } = useOffer(offerId ?? '');
   const { data: existingDraft } = useBookingById(draftId);
   const { mutate: createDraft, isPending: isSubmitting, error: submitError } = useBookingDraft();
+  const { data: savedPassengers = [] } = usePassengers();
+  const user = useAuthStore((s) => s.user);
 
   const {
     register,
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<DraftFormData>({
     resolver: zodResolver(DraftFormSchema),
@@ -96,10 +102,16 @@ export function BookingPassengersPage() {
     if (existingDraft && existingDraft.passengers.length > 0) {
       reset({ passengers: existingDraft.passengers.map(draftPassengerToForm) });
     } else {
-      reset({ passengers: Array.from({ length: count }, (_, i) => blankPassenger(i === 0 ? 'adult' : 'adult')) });
+      reset({
+        passengers: Array.from({ length: count }, (_, i) => {
+          const pax = blankPassenger('adult');
+          if (i === 0 && user?.email) pax.email = user.email;
+          return pax;
+        }),
+      });
     }
     setFormReady(true);
-  }, [data, existingDraft, draftId, formReady, reset]);
+  }, [data, existingDraft, draftId, formReady, reset, user]);
 
   function onSubmit(formData: DraftFormData) {
     if (!offerId) return;
@@ -146,7 +158,9 @@ export function BookingPassengersPage() {
                   total={fields.length}
                   register={register}
                   control={control}
+                  setValue={setValue}
                   errors={errors.passengers?.[i]}
+                  savedPassengers={savedPassengers}
                 />
               ))}
 
@@ -195,12 +209,15 @@ interface PassengerFormCardProps {
   total: number;
   register: ReturnType<typeof useForm<DraftFormData>>['register'];
   control: ReturnType<typeof useForm<DraftFormData>>['control'];
+  setValue: UseFormSetValue<DraftFormData>;
   errors: FieldErrors<BookingPassenger> | undefined;
+  savedPassengers: SavedPassenger[];
 }
 
-function PassengerFormCard({ index, total, register, control, errors }: PassengerFormCardProps) {
+function PassengerFormCard({ index, total, register, control, setValue, errors, savedPassengers }: PassengerFormCardProps) {
   const p = `passengers.${index}` as const;
   const isFirst = index === 0;
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const passengerType = useWatch({ control, name: `${p}.type` }) ?? 'adult';
   const countryCode = useWatch({ control, name: `${p}.phone.countryCode` }) ?? '+965';
@@ -209,6 +226,19 @@ function PassengerFormCard({ index, total, register, control, errors }: Passenge
 
   // Phone errors are nested under phone.number / phone.countryCode
   const phoneErrors = errors?.phone as { number?: { message?: string }; countryCode?: { message?: string } } | undefined;
+
+  function fillFromSaved(pax: SavedPassenger) {
+    setValue(`${p}.title`, (pax.title as BookingPassenger['title']) ?? 'mr', { shouldValidate: false });
+    setValue(`${p}.firstName`, pax.firstName, { shouldValidate: false });
+    setValue(`${p}.lastName`, pax.lastName, { shouldValidate: false });
+    setValue(`${p}.dob`, pax.dob ? pax.dob.split('T')[0]! : '', { shouldValidate: false });
+    setValue(`${p}.gender`, (pax.gender as 'm' | 'f') ?? 'm', { shouldValidate: false });
+    setValue(`${p}.nationality`, pax.nationality ?? 'KW', { shouldValidate: false });
+    if (pax.passportNumber) setValue(`${p}.passportNumber`, pax.passportNumber, { shouldValidate: false });
+    if (pax.passportExpiry) setValue(`${p}.passportExpiry`, pax.passportExpiry.split('T')[0]!, { shouldValidate: false });
+    if (pax.passportIssuingCountry) setValue(`${p}.passportIssuingCountry`, pax.passportIssuingCountry, { shouldValidate: false });
+    setPickerOpen(false);
+  }
 
   return (
     <div className="bg-white border border-line rounded-card p-5">
@@ -232,6 +262,40 @@ function PassengerFormCard({ index, total, register, control, errors }: Passenge
           </select>
         )}
       </div>
+
+      {/* Saved passenger picker */}
+      {savedPassengers.length > 0 && (
+        <div className="mb-4 relative">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[12px] font-semibold text-green hover:text-green/80 border border-green/30 bg-green-tint px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="5.5" cy="4" r="2.5" />
+              <path d="M1 11c0-2.5 2-4.5 4.5-4.5" />
+              <path d="M9 8v4M7 10h4" />
+            </svg>
+            Fill from saved passenger
+          </button>
+
+          {pickerOpen && (
+            <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-line rounded-xl shadow-lg w-72 py-1 max-h-60 overflow-y-auto">
+              {savedPassengers.map((pax) => (
+                <button
+                  key={pax.id}
+                  type="button"
+                  onClick={() => fillFromSaved(pax)}
+                  className="w-full text-left px-4 py-2.5 hover:bg-surface transition-colors"
+                >
+                  <p className="text-[13px] font-semibold text-navy">{pax.firstName} {pax.lastName}</p>
+                  <p className="text-[11px] text-muted capitalize">{pax.relationship.replace('_', ' ')} · {pax.nationality}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="space-y-4">
         {/* Title + Gender */}

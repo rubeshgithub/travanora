@@ -11,6 +11,12 @@ import { BookingPaymentPage } from './pages/BookingPaymentPage.js';
 import { BookingConfirmedPage } from './pages/BookingConfirmedPage.js';
 import { VerifyEmailPage } from './pages/VerifyEmailPage.js';
 import { ResetPasswordPage } from './pages/ResetPasswordPage.js';
+import { DashboardPage } from './pages/DashboardPage.js';
+import { TripsPage } from './pages/TripsPage.js';
+import { TripDetailPage } from './pages/TripDetailPage.js';
+import { AccountPage } from './pages/AccountPage.js';
+import { SecurityPage } from './pages/SecurityPage.js';
+import { SavedPassengersPage } from './pages/SavedPassengersPage.js';
 import { RequireAuth } from './components/RequireAuth.js';
 
 export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
@@ -47,4 +53,29 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
   },
   // Phase 1 compat
   { path: '/booking/:bookingRef', element: <ConfirmationPage /> },
+  // Phase 3a — member area
+  {
+    path: '/dashboard',
+    element: <RequireAuth><DashboardPage /></RequireAuth>,
+  },
+  {
+    path: '/trips',
+    element: <RequireAuth><TripsPage /></RequireAuth>,
+  },
+  {
+    path: '/trips/:bookingId',
+    element: <RequireAuth><TripDetailPage /></RequireAuth>,
+  },
+  {
+    path: '/account',
+    element: <RequireAuth><AccountPage /></RequireAuth>,
+  },
+  {
+    path: '/account/security',
+    element: <RequireAuth><SecurityPage /></RequireAuth>,
+  },
+  {
+    path: '/account/passengers',
+    element: <RequireAuth><SavedPassengersPage /></RequireAuth>,
+  },
 ]);

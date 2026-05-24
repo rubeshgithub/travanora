@@ -154,7 +154,18 @@ export function Navbar() {
                   {/* Menu items */}
                   <div className="py-1">
                     <Link
-                      to="/me/bookings"
+                      to="/dashboard"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-[14px] text-navy hover:bg-surface transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted flex-shrink-0">
+                        <path d="M2 7l6-5 6 5v7a1 1 0 01-1 1H3a1 1 0 01-1-1V7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M6 14V9h4v5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Dashboard
+                    </Link>
+                    <Link
+                      to="/trips"
                       onClick={() => setOpen(false)}
                       className="flex items-center gap-3 px-4 py-2.5 text-[14px] text-navy hover:bg-surface transition-colors"
                     >
@@ -164,7 +175,18 @@ export function Navbar() {
                         <path d="M1.5 6h13" stroke="currentColor" strokeWidth="1.3" />
                         <path d="M5 9.5h3M5 11.5h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                       </svg>
-                      My bookings
+                      My trips
+                    </Link>
+                    <Link
+                      to="/account"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2.5 text-[14px] text-navy hover:bg-surface transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-muted flex-shrink-0">
+                        <circle cx="8" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.3" />
+                        <path d="M1.5 14c0-3.5 3-6 6.5-6s6.5 2.5 6.5 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                      </svg>
+                      My account
                     </Link>
 
                     <div className="border-t border-line my-1" />
