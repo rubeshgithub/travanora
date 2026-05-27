@@ -1,6 +1,5 @@
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { MemberShell } from '@/components/MemberShell.js';
-import { formatPrice } from '@/lib/flightUtils.js';
 import type { CancellationResult } from '@/features/trips/trips.api.js';
 
 export function TripCancelConfirmedPage() {
