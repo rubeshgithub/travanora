@@ -53,6 +53,14 @@ function PeopleIcon() {
   );
 }
 
+function WrenchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 3.3a4 4 0 00-5.4 5.4L2 16l2 2 7.3-7.3a4 4 0 005.4-5.4l-2.4 2.4-1.8-1.8 2.2-2.6z" />
+    </svg>
+  );
+}
+
 function SignOutIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -143,6 +151,9 @@ export function MemberShell({ children }: MemberShellProps) {
               {NAV_ITEMS.map((item) => (
                 <SidebarLink key={item.to} item={item} />
               ))}
+              {user?.isAdmin && (
+                <SidebarLink item={{ to: '/admin/refunds', label: 'Refund queue', icon: <WrenchIcon /> }} />
+              )}
               {/* Search flights */}
               <Link
                 to="/"

@@ -156,6 +156,7 @@ export const UserResponseSchema = z.object({
   lastName: z.string(),
   city: z.string(),
   emailVerified: z.boolean(),
+  isAdmin: z.boolean().optional(),
   createdAt: z.string(),
 });
 

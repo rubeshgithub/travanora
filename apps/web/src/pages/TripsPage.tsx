@@ -17,35 +17,45 @@ function isUpcoming(booking: MyBooking) {
   return new Date(dep) > new Date();
 }
 
+const STATUS_STYLE: Record<string, string> = {
+  confirmed:          'bg-green-tint text-green',
+  changed:            'bg-blue-50 text-blue-600',
+  cancelling:         'bg-amber-50 text-amber-600',
+  cancelled:          'bg-red-50 text-red-500',
+};
+const STATUS_LABEL: Record<string, string> = {
+  confirmed:  'Confirmed',
+  changed:    'Changed',
+  cancelling: 'Cancelling',
+  cancelled:  'Cancelled',
+};
+
 function TripCard({ booking }: { booking: MyBooking }) {
   const outbound = booking.sliceSummary[0];
   const inbound = booking.sliceSummary[1];
   const upcoming = isUpcoming(booking);
+  const isCancelled = booking.status === 'cancelled' || booking.status === 'cancelling';
 
   return (
-    <article className="bg-white border border-line rounded-card p-5 hover:shadow-card-hover transition-shadow duration-200">
+    <article className={`bg-white border rounded-card p-5 hover:shadow-card-hover transition-shadow duration-200 ${isCancelled ? 'border-line opacity-75' : 'border-line'}`}>
       <div className="flex flex-col sm:flex-row sm:items-start gap-4">
         <div className="flex-1 min-w-0 space-y-2.5">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-green-tint border border-green/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-[11px] font-bold text-green">{outbound?.airlineCode ?? '??'}</span>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${isCancelled ? 'bg-surface border border-line' : 'bg-green-tint border border-green/20'}`}>
+              <span className={`text-[11px] font-bold ${isCancelled ? 'text-muted' : 'text-green'}`}>{outbound?.airlineCode ?? '??'}</span>
             </div>
             <div>
               <p className="text-[13px] font-semibold text-navy">{outbound?.airlineName ?? 'Unknown airline'}</p>
               <p className="text-[11px] text-muted">{inbound ? 'Return' : 'One way'}</p>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              {upcoming && (
+              {upcoming && !isCancelled && (
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
                   Upcoming
                 </span>
               )}
-              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                booking.status === 'confirmed'
-                  ? 'bg-green-tint text-green'
-                  : 'bg-red-50 text-red-500'
-              }`}>
-                {booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLE[booking.status] ?? 'bg-surface text-muted'}`}>
+                {STATUS_LABEL[booking.status] ?? booking.status}
               </span>
             </div>
           </div>
@@ -128,18 +138,20 @@ export function TripsPage() {
   const [tab, setTab] = useState<Tab>('upcoming');
   const { data: bookings, isPending, error } = useMyBookings();
 
-  const confirmed = (bookings ?? []).filter((b) => b.status === 'confirmed');
+  const ACTIVE_STATUSES = ['confirmed', 'cancelling', 'changed', 'cancelled'];
+  const all = (bookings ?? []).filter((b) => ACTIVE_STATUSES.includes(b.status));
+  const activeOnly = all.filter((b) => b.status !== 'cancelled' && b.status !== 'cancelling');
   const filtered =
-    tab === 'upcoming' ? confirmed.filter(isUpcoming) :
-    tab === 'past'     ? confirmed.filter((b) => !isUpcoming(b)) :
-                         confirmed;
+    tab === 'upcoming' ? activeOnly.filter(isUpcoming) :
+    tab === 'past'     ? activeOnly.filter((b) => !isUpcoming(b)) :
+                         all;
 
   return (
     <MemberShell>
       <div className="space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-navy tracking-tight">My Trips</h1>
-          <p className="text-muted text-sm mt-0.5">All your confirmed flights</p>
+          <p className="text-muted text-sm mt-0.5">All your flights</p>
         </div>
 
         {/* Tabs */}
@@ -171,7 +183,7 @@ export function TripsPage() {
           <div className="text-center py-16 border border-dashed border-line rounded-card">
             <p className="text-3xl mb-3">✈️</p>
             <h3 className="font-semibold text-navy">
-              {tab === 'upcoming' ? 'No upcoming trips' : tab === 'past' ? 'No past trips' : 'No trips yet'}
+              {tab === 'upcoming' ? 'No upcoming trips' : tab === 'past' ? 'No past trips' : 'No bookings yet'}
             </h3>
             <p className="text-muted text-sm mt-1 mb-5">
               {tab === 'upcoming' ? 'Time to plan your next adventure!' : 'Your travel history will appear here.'}

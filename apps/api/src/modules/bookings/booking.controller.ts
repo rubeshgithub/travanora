@@ -33,10 +33,9 @@ export async function listBookingsHandler(req: Request, res: Response) {
 
   const bookings = await Booking.find({
     userId: new Types.ObjectId(req.user.sub),
-    status: { $in: ['confirmed', 'paid', 'cancelled', 'payment_succeeded_booking_failed'] },
+    status: { $in: ['confirmed', 'paid', 'changed', 'cancelling', 'cancelled', 'payment_succeeded_booking_failed'] },
   })
-    .sort({ createdAt: -1 })
-    .lean();
+    .sort({ createdAt: -1 });
 
   return res.json(bookings);
 }

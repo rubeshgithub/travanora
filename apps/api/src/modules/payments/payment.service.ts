@@ -9,6 +9,8 @@ import { Booking } from '../bookings/booking.model.js';
 import { WebhookEvent } from './webhook-event.model.js';
 import { AppError } from '../../middleware/error.handler.js';
 import { sendBookingConfirmation } from '../emails/email.service.js';
+import { RefundLedger } from '../refunds/refund-ledger.model.js';
+import { AuditLog } from '../audit/audit-log.model.js';
 
 // ─── Currency helpers ─────────────────────────────────────────────────────────
 
@@ -127,6 +129,10 @@ export async function handleWebhookEvent(payload: Buffer, signature: string): Pr
     await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent);
   } else if (event.type === 'payment_intent.payment_failed') {
     await handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
+  } else if (event.type === 'charge.refunded') {
+    await handleChargeRefunded(event.data.object as Stripe.Charge);
+  } else if (event.type === 'refund.updated') {
+    await handleRefundUpdated(event.data.object as Stripe.Refund);
   }
 }
 
@@ -248,6 +254,93 @@ async function handlePaymentSucceeded(pi: Stripe.PaymentIntent): Promise<void> {
       status: 'payment_succeeded_booking_failed',
       failureReason: (err as Error).message,
       failedAt: new Date(),
+      refundRequiredAt: new Date(),
+    });
+
+    // Hop 1 = not_applicable (order never created, no airline refund)
+    // Hop 2 = pending (we owe the customer their totalAmount back via Stripe)
+    await RefundLedger.create({
+      bookingId: booking._id,
+      userId: booking.userId,
+      reason: 'booking_failed',
+      airlineRefundAmount: 0,
+      airlineRefundCurrency: booking.currency,
+      airlineRefundStatus: 'not_applicable',
+      customerRefundAmount: booking.totalAmount,
+      customerRefundCurrency: booking.currency,
+      customerRefundStatus: 'pending',
+      customerRefundProvider: 'stripe',
+    });
+
+    await AuditLog.create({
+      actorUserId: booking.userId,
+      bookingId: booking._id,
+      action: 'customer_refund_initiated',
+      payloadSummary: {
+        reason: 'booking_failed',
+        customerRefundAmount: booking.totalAmount,
+        currency: booking.currency,
+        piId: pi.id,
+        errorMessage: (err as Error).message,
+      },
+      result: 'failure',
+      error: 'Duffel order creation failed — refund queued',
+    });
+  }
+}
+
+// ─── Refund webhook handlers ──────────────────────────────────────────────────
+
+async function handleChargeRefunded(charge: Stripe.Charge): Promise<void> {
+  const refund = charge.refunds?.data?.[0];
+  if (!refund) return;
+
+  const booking = await Booking.findOne({ stripePaymentIntentId: charge.payment_intent as string });
+  if (!booking) return;
+
+  const ledger = await RefundLedger.findOneAndUpdate(
+    { bookingId: booking._id, customerRefundReference: refund.id },
+    { customerRefundStatus: 'completed', completedAt: new Date() },
+    { new: true },
+  );
+  if (!ledger) return;
+
+  logger.info({ bookingId: String(booking._id), refundId: refund.id }, 'Refund completed via charge.refunded');
+  await AuditLog.create({
+    actorUserId: booking.userId,
+    bookingId: booking._id,
+    action: 'customer_refund_completed',
+    payloadSummary: { refundId: refund.id, amount: refund.amount, currency: refund.currency },
+    result: 'success',
+  });
+}
+
+async function handleRefundUpdated(refund: Stripe.Refund): Promise<void> {
+  if (refund.status !== 'succeeded' && refund.status !== 'failed') return;
+
+  const ledger = await RefundLedger.findOne({ customerRefundReference: refund.id });
+  if (!ledger) return;
+
+  if (refund.status === 'succeeded') {
+    await ledger.updateOne({ customerRefundStatus: 'completed', completedAt: new Date() });
+    logger.info({ refundId: refund.id }, 'Refund completed via refund.updated');
+    await AuditLog.create({
+      actorUserId: ledger.userId,
+      bookingId: ledger.bookingId,
+      action: 'customer_refund_completed',
+      payloadSummary: { refundId: refund.id, amount: refund.amount, currency: refund.currency },
+      result: 'success',
+    });
+  } else {
+    await ledger.updateOne({ customerRefundStatus: 'failed' });
+    logger.warn({ refundId: refund.id }, 'Stripe refund failed — ledger marked for manual review');
+    await AuditLog.create({
+      actorUserId: ledger.userId,
+      bookingId: ledger.bookingId,
+      action: 'customer_refund_failed',
+      payloadSummary: { refundId: refund.id, failureReason: refund.failure_reason },
+      result: 'failure',
+      error: refund.failure_reason ?? 'Stripe refund failed',
     });
   }
 }

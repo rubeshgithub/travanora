@@ -50,7 +50,7 @@ function toSummary(b: Record<string, unknown>): BookingSummary {
 export async function getDashboard(userId: string): Promise<DashboardData> {
   const [member, bookings] = await Promise.all([
     Member.findOne({ userId }),
-    Booking.find({ userId, status: 'confirmed' })
+    Booking.find({ userId, status: { $in: ['confirmed', 'cancelling', 'changed', 'cancelled'] } })
       .sort({ createdAt: -1 })
       .lean<Record<string, unknown>[]>(),
   ]);
@@ -61,6 +61,7 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
 
   const upcoming = bookings
     .filter((b) => {
+      if (!['confirmed', 'changed'].includes(b.status as string)) return false;
       const slices = b.sliceSummary as Array<{ departureAt?: string }> | undefined;
       const dep = slices?.[0]?.departureAt;
       return dep && dep > now;
@@ -71,7 +72,9 @@ export async function getDashboard(userId: string): Promise<DashboardData> {
       return (slicesA?.[0]?.departureAt ?? '').localeCompare(slicesB?.[0]?.departureAt ?? '');
     });
 
-  const totalSavedAmount = bookings.reduce((sum, b) => sum + ((b.memberDiscount as number) ?? 0), 0);
+  const totalSavedAmount = bookings
+    .filter((b) => b.status !== 'cancelled')
+    .reduce((sum, b) => sum + ((b.memberDiscount as number) ?? 0), 0);
 
   return {
     member: {

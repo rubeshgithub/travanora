@@ -26,6 +26,13 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
+export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user?.isAdmin) {
+    return next(new AppError(403, 'FORBIDDEN', 'Admin access required'));
+  }
+  return next();
+}
+
 export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return next();

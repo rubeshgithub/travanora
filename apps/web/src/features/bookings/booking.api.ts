@@ -16,7 +16,7 @@ export interface MyBooking {
   totalAmount: number;
   savings: number;
   currency: string;
-  status: 'confirmed' | 'cancelled' | 'payment_succeeded_booking_failed' | 'failed';
+  status: 'confirmed' | 'cancelling' | 'cancelled' | 'changed' | 'payment_succeeded_booking_failed' | 'failed';
   sliceSummary: MyBookingSlice[];
   createdAt: string;
 }

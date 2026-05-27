@@ -71,6 +71,7 @@ export async function changePassword(
     sub: userId,
     email: user.email,
     tier: member?.tier ?? 'free',
+    isAdmin: user.isAdmin ?? false,
   });
   const rawRefreshToken = signRefreshToken(userId, false);
   const expiry = getRefreshTokenExpiry(false);

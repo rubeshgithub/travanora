@@ -10,6 +10,7 @@ export interface IUser extends Document {
   phone: { countryCode: string; number: string };
   city: string;
   emailVerified: boolean;
+  isAdmin: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
   passwordResetToken?: string;
@@ -46,6 +47,7 @@ const userSchema = new Schema<IUser>(
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
     marketingOptIn: { type: Boolean, default: true },
+    isAdmin: { type: Boolean, default: false },
     lastLoginAt: { type: Date },
   },
   { timestamps: true },

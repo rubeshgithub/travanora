@@ -6,6 +6,7 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   tier: string;
+  isAdmin: boolean;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {

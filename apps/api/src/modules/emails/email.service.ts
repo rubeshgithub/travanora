@@ -382,6 +382,256 @@ export async function sendVerificationEmail(
   }
 }
 
+// ─── Shared layout helpers ────────────────────────────────────────────────────
+
+function emailShell(subtitle: string, body: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 16px;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+      <tr>
+        <td style="background:#0a2540;padding:24px 32px;">
+          <div style="font-size:22px;font-weight:800;color:#FFBF00;letter-spacing:-0.5px;">Travanora</div>
+          <div style="margin-top:4px;color:#94a3b8;font-size:13px;">${subtitle}</div>
+        </td>
+      </tr>
+      <tr><td style="padding:32px;">${body}</td></tr>
+      <tr>
+        <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+          <span style="color:#9ca3af;font-size:12px;">
+            Travanora · <a href="mailto:${env.SES_REPLY_TO}" style="color:#FFBF00;text-decoration:none;">${env.SES_REPLY_TO}</a>
+          </span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
+function row(label: string, value: string): string {
+  return `<tr>
+    <td style="padding:8px 0;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:13px;">${label}</td>
+    <td style="padding:8px 0;border-bottom:1px solid #f3f4f6;color:#0a2540;font-size:13px;text-align:right;font-weight:600;">${value}</td>
+  </tr>`;
+}
+
+async function sendEmail(params: {
+  recipient: string;
+  subject: string;
+  html: string;
+  template: string;
+  bookingId?: string;
+}): Promise<void> {
+  const cmd = new SendEmailCommand({
+    FromEmailAddress: FROM_ADDRESS,
+    ReplyToAddresses: [env.SES_REPLY_TO],
+    Destination: { ToAddresses: [params.recipient] },
+    Content: {
+      Simple: {
+        Subject: { Data: params.subject, Charset: 'UTF-8' },
+        Body: { Html: { Data: params.html, Charset: 'UTF-8' } },
+      },
+    },
+  });
+  const result = await ses.send(cmd);
+  await EmailLog.create({
+    recipient: params.recipient,
+    template: params.template,
+    sentAt: new Date(),
+    sesMessageId: result.MessageId,
+    bookingId: params.bookingId,
+  });
+  logger.info({ recipient: params.recipient, messageId: result.MessageId, template: params.template }, 'Email sent');
+}
+
+async function logEmailError(params: {
+  recipient: string;
+  template: string;
+  bookingId?: string;
+  err: unknown;
+}): Promise<void> {
+  await EmailLog.create({
+    recipient: params.recipient,
+    template: params.template,
+    sentAt: new Date(),
+    error: (params.err as Error).message,
+    bookingId: params.bookingId,
+  }).catch(() => undefined);
+  logger.error({ err: params.err, recipient: params.recipient, template: params.template }, 'Failed to send email');
+}
+
+// ─── Cancellation confirmed ───────────────────────────────────────────────────
+
+export interface CancellationEmailData {
+  bookingRef: string;
+  passengerName: string;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  airline?: string;
+  refundAmount: number;
+  currency: string;
+  isManualRefund: boolean;
+  bookingId?: string;
+}
+
+export async function sendCancellationConfirmedEmail(
+  recipient: string,
+  data: CancellationEmailData,
+): Promise<void> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) return;
+
+  const hasRefund = data.refundAmount > 0;
+
+  const refundBlock = hasRefund
+    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+        <div style="margin:0 0 4px;color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">
+          ${data.isManualRefund ? 'Refund being processed' : 'Refund initiated'}
+        </div>
+        <div style="color:#0a2540;font-size:26px;font-weight:800;margin:4px 0;">${formatMoney(data.refundAmount, data.currency)}</div>
+        <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;">
+          ${data.isManualRefund
+            ? 'Our team is processing your refund and will be in touch shortly.'
+            : 'Your refund will appear on your original payment method within 5–10 business days.'}
+        </p>
+      </div>`
+    : `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+        <p style="margin:0;color:#6b7280;font-size:13px;">This was a non-refundable fare. No refund will be issued.</p>
+      </div>`;
+
+  const body = `
+    <p style="margin:0 0 6px;color:#6b7280;font-size:14px;">Hi ${data.passengerName},</p>
+    <p style="margin:0 0 24px;color:#0a2540;font-size:17px;font-weight:700;">Your booking has been cancelled</p>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+      <div style="margin:0 0 4px;color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Booking Reference</div>
+      <div style="color:#0a2540;font-size:22px;font-weight:800;letter-spacing:3px;font-family:monospace;">${data.bookingRef}</div>
+    </div>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td colspan="2" style="padding-bottom:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#6b7280;">
+          Cancelled flight${data.airline ? ' — ' + data.airline : ''}
+        </td>
+      </tr>
+      ${row(`${data.origin} → ${data.destination}`, formatDateTime(data.departureAt))}
+    </table>
+
+    ${refundBlock}
+
+    <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">
+      Questions? Contact us at
+      <a href="mailto:${env.SES_REPLY_TO}" style="color:#00b67a;text-decoration:none;">${env.SES_REPLY_TO}</a>.
+    </p>`;
+
+  const html = emailShell('Booking Cancellation', body);
+
+  try {
+    await sendEmail({
+      recipient,
+      subject: `Booking Cancelled · ${data.bookingRef}`,
+      html,
+      template: 'cancellation_confirmed',
+      bookingId: data.bookingId,
+    });
+  } catch (err) {
+    await logEmailError({ recipient, template: 'cancellation_confirmed', bookingId: data.bookingId, err });
+  }
+}
+
+// ─── Change confirmed ─────────────────────────────────────────────────────────
+
+export interface ChangeEmailData {
+  bookingRef: string;
+  passengerName: string;
+  newSlices: Array<{
+    origin: string;
+    destination: string;
+    departureAt: string;
+    arrivalAt: string;
+  }>;
+  airline?: string;
+  changeTotalAmount: number;
+  currency: string;
+  isRefund: boolean;
+  bookingId?: string;
+}
+
+export async function sendChangeConfirmedEmail(
+  recipient: string,
+  data: ChangeEmailData,
+): Promise<void> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) return;
+
+  const sliceRows = data.newSlices
+    .map((s) => row(`${s.origin} → ${s.destination}`, formatDateTime(s.departureAt)))
+    .join('');
+
+  const pricingBlock = data.changeTotalAmount === 0
+    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+        <p style="margin:0;color:#6b7280;font-size:13px;">This change was free — no additional charge.</p>
+      </div>`
+    : data.isRefund
+    ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+        <div style="margin:0 0 4px;color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Refund due</div>
+        <div style="color:#0a2540;font-size:22px;font-weight:800;margin:4px 0;">${formatMoney(Math.abs(data.changeTotalAmount), data.currency)}</div>
+        <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;">
+          Your refund will appear on your original payment method within 5–10 business days.
+        </p>
+      </div>`
+    : `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+        <div style="margin:0 0 4px;color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Additional charge</div>
+        <div style="color:#0a2540;font-size:22px;font-weight:800;margin:4px 0;">${formatMoney(data.changeTotalAmount, data.currency)}</div>
+        <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;">
+          Our team will be in touch to collect the additional charge.
+        </p>
+      </div>`;
+
+  const body = `
+    <p style="margin:0 0 6px;color:#6b7280;font-size:14px;">Hi ${data.passengerName},</p>
+    <p style="margin:0 0 24px;color:#0a2540;font-size:17px;font-weight:700;">Your flight has been changed ✓</p>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+      <div style="margin:0 0 4px;color:#6b7280;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">Booking Reference</div>
+      <div style="color:#0a2540;font-size:22px;font-weight:800;letter-spacing:3px;font-family:monospace;">${data.bookingRef}</div>
+    </div>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td colspan="2" style="padding-bottom:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#6b7280;">
+          New itinerary${data.airline ? ' — ' + data.airline : ''}
+        </td>
+      </tr>
+      ${sliceRows}
+    </table>
+
+    ${pricingBlock}
+
+    <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">
+      Questions? Contact us at
+      <a href="mailto:${env.SES_REPLY_TO}" style="color:#00b67a;text-decoration:none;">${env.SES_REPLY_TO}</a>.
+    </p>`;
+
+  const html = emailShell('Flight Change', body);
+
+  try {
+    await sendEmail({
+      recipient,
+      subject: `Flight Changed · ${data.bookingRef}`,
+      html,
+      template: 'change_confirmed',
+      bookingId: data.bookingId,
+    });
+  } catch (err) {
+    await logEmailError({ recipient, template: 'change_confirmed', bookingId: data.bookingId, err });
+  }
+}
+
 export async function sendBookingConfirmation(
   recipient: string,
   data: BookingConfirmationData,
@@ -395,36 +645,9 @@ export async function sendBookingConfirmation(
   const subject = `Booking Confirmed · ${data.bookingRef}`;
 
   try {
-    const cmd = new SendEmailCommand({
-      FromEmailAddress: FROM_ADDRESS,
-      ReplyToAddresses: [env.SES_REPLY_TO],
-      Destination: { ToAddresses: [recipient] },
-      Content: {
-        Simple: {
-          Subject: { Data: subject, Charset: 'UTF-8' },
-          Body: { Html: { Data: html, Charset: 'UTF-8' } },
-        },
-      },
-    });
-
-    const result = await ses.send(cmd);
-    await EmailLog.create({
-      recipient,
-      template: 'booking_confirmation',
-      sentAt: new Date(),
-      sesMessageId: result.MessageId,
-      bookingId: data.bookingId,
-    });
-    logger.info({ recipient, messageId: result.MessageId, bookingRef: data.bookingRef }, 'Confirmation email sent');
+    await sendEmail({ recipient, subject, html, template: 'booking_confirmation', bookingId: data.bookingId });
   } catch (err) {
-    await EmailLog.create({
-      recipient,
-      template: 'booking_confirmation',
-      sentAt: new Date(),
-      error: (err as Error).message,
-      bookingId: data.bookingId,
-    }).catch(() => undefined);
-    logger.error({ err, recipient, bookingRef: data.bookingRef }, 'Failed to send confirmation email');
+    await logEmailError({ recipient, template: 'booking_confirmation', bookingId: data.bookingId, err });
     throw err;
   }
 }

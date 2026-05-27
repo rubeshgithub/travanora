@@ -146,6 +146,7 @@ export async function refresh(
     sub: user.id as string,
     email: user.email,
     tier: member.tier,
+    isAdmin: user.isAdmin ?? false,
   });
 
   return { accessToken, newRefreshToken, expiry };
@@ -235,6 +236,7 @@ async function issueTokens(
     sub: userId.toString(),
     email: user['email'] as string,
     tier: (member['tier'] as string) ?? 'free',
+    isAdmin: (user['isAdmin'] as boolean) ?? false,
   });
 
   const rawRefreshToken = signRefreshToken(userId.toString(), rememberMe);

@@ -9,6 +9,9 @@ export type BookingStatus =
   | 'confirmed'
   | 'failed'
   | 'cancelled'
+  | 'cancelling'
+  | 'change_in_progress'
+  | 'changed'
   | 'payment_succeeded_booking_failed';
 
 // ─── Passenger ────────────────────────────────────────────────────────────────
@@ -111,6 +114,11 @@ export interface IBooking extends Document {
   failureReason?: string;
   failedAt?: Date;
 
+  // Cancellation / change (set when those flows complete)
+  cancelledAt?: Date;
+  changedAt?: Date;
+  refundRequiredAt?: Date;   // set by Phase 2 on payment_succeeded_booking_failed; consumed by RefundLedger
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,7 +134,7 @@ const bookingSchema = new Schema<IBooking>(
 
     status: {
       type: String,
-      enum: ['draft', 'pending_payment', 'paid', 'confirmed', 'failed', 'cancelled', 'payment_succeeded_booking_failed'],
+      enum: ['draft', 'pending_payment', 'paid', 'confirmed', 'failed', 'cancelled', 'cancelling', 'change_in_progress', 'changed', 'payment_succeeded_booking_failed'],
       default: 'draft',
       index: true,
     },
@@ -170,6 +178,11 @@ const bookingSchema = new Schema<IBooking>(
     // Failure
     failureReason: { type: String },
     failedAt: { type: Date },
+
+    // Cancellation / change
+    cancelledAt: { type: Date },
+    changedAt: { type: Date },
+    refundRequiredAt: { type: Date },
   },
   { timestamps: true },
 );

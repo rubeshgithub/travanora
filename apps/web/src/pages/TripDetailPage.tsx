@@ -1,8 +1,10 @@
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MemberShell } from '@/components/MemberShell.js';
 import { fetchBookingById, type BookingSliceV2 } from '@/features/bookings/booking.api.js';
+import { useConditions, useRefundLedger } from '@/features/trips/useTrips.js';
 import { formatPrice } from '@/lib/flightUtils.js';
+import type { TripConditions, RefundLedgerEntry } from '@/features/trips/trips.api.js';
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-KW', {
@@ -14,6 +16,8 @@ function formatDateTime(iso: string) {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-KW', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+// ── Slice card ─────────────────────────────────────────────────────────────────
 
 function SliceCard({ slice, label }: { slice: BookingSliceV2; label?: string }) {
   return (
@@ -49,7 +53,6 @@ function SliceCard({ slice, label }: { slice: BookingSliceV2; label?: string }) 
           </div>
         </div>
 
-        {/* Segments */}
         {slice.segments && slice.segments.length > 0 && (
           <div className="space-y-2 pt-1">
             {slice.segments.map((seg, i) => (
@@ -69,6 +72,186 @@ function SliceCard({ slice, label }: { slice: BookingSliceV2; label?: string }) 
   );
 }
 
+// ── Conditions panel ───────────────────────────────────────────────────────────
+
+function ConditionPill({ allowed, label }: { allowed: boolean; label: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+      allowed ? 'bg-green-tint text-green' : 'bg-red-50 text-red-500'
+    }`}>
+      {allowed ? '✓' : '✕'} {label}
+    </span>
+  );
+}
+
+function ConditionsPanel({ conditions, currency }: { conditions: TripConditions; currency: string }) {
+  const { refundCondition, changeCondition } = conditions;
+
+  const formatPenalty = (
+    cond: { allowed: boolean; penaltyAmount: number | null; penaltyCurrency: string | null } | null,
+  ) => {
+    if (!cond || !cond.allowed) return null;
+    if (cond.penaltyAmount == null) return 'Penalty unknown';
+    if (cond.penaltyAmount === 0) return 'No penalty';
+    return `${formatPrice(cond.penaltyAmount, cond.penaltyCurrency ?? currency)} penalty`;
+  };
+
+  return (
+    <div className="bg-white border border-line rounded-xl p-5 space-y-3">
+      <h2 className="text-[14px] font-semibold text-navy">Fare conditions</h2>
+      <div className="flex flex-wrap gap-2">
+        <ConditionPill
+          allowed={refundCondition?.allowed ?? false}
+          label={refundCondition?.allowed ? 'Refundable' : 'Non-refundable'}
+        />
+        <ConditionPill
+          allowed={changeCondition?.allowed ?? false}
+          label={changeCondition?.allowed ? 'Changes allowed' : 'No changes'}
+        />
+      </div>
+      <div className="space-y-1">
+        {refundCondition?.allowed && (
+          <p className="text-[12px] text-muted">
+            Cancellation: {formatPenalty(refundCondition) ?? 'Free cancellation'}
+          </p>
+        )}
+        {changeCondition?.allowed && (
+          <p className="text-[12px] text-muted">
+            Changes: {formatPenalty(changeCondition) ?? 'Free changes'}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Refund status strip ────────────────────────────────────────────────────────
+
+const REFUND_STATUS_COPY: Record<string, { label: string; color: string }> = {
+  pending:         { label: 'Refund queued',            color: 'text-amber-600 bg-amber-50' },
+  processing:      { label: 'Refund processing',        color: 'text-blue-600 bg-blue-50' },
+  completed:       { label: 'Refund issued',            color: 'text-green bg-green-tint' },
+  failed:          { label: 'Refund failed — contact support', color: 'text-red-600 bg-red-50' },
+  manual_required: { label: 'Refund being processed by our team', color: 'text-amber-600 bg-amber-50' },
+};
+
+function RefundStrip({ entries, currency }: { entries: RefundLedgerEntry[]; currency: string }) {
+  if (entries.length === 0) return null;
+  const latest = entries[0]!;
+  const { label, color } = REFUND_STATUS_COPY[latest.customerRefundStatus] ?? { label: latest.customerRefundStatus, color: 'text-muted bg-surface' };
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${color} border-current/20`}>
+      <div>
+        <p className="text-[13px] font-semibold">{label}</p>
+        {latest.customerRefundStatus !== 'completed' && (
+          <p className="text-[11px] mt-0.5 opacity-80">Refunds typically take 5–10 business days to appear on your card.</p>
+        )}
+      </div>
+      <p className="text-[14px] font-bold flex-shrink-0">
+        {formatPrice(latest.customerRefundAmount, latest.customerRefundCurrency ?? currency)}
+      </p>
+    </div>
+  );
+}
+
+// ── Actions panel ──────────────────────────────────────────────────────────────
+
+function ActionsPanel({
+  bookingId,
+  bookingRef,
+  conditions,
+  status,
+}: {
+  bookingId: string;
+  bookingRef?: string;
+  conditions: TripConditions | undefined;
+  status: string;
+}) {
+  const navigate = useNavigate();
+  const whatsappUrl = `https://wa.me/96500000000?text=${encodeURIComponent(`Hi, I need help with booking ${bookingRef ?? bookingId}`)}`;
+
+  if (status === 'cancelled') {
+    return (
+      <div className="bg-white border border-line rounded-xl p-5">
+        <p className="text-[13px] text-muted">This booking has been cancelled.</p>
+      </div>
+    );
+  }
+
+  if (status !== 'confirmed' && status !== 'changed') {
+    return null;
+  }
+
+  const conditionsLoaded = conditions !== undefined;
+  const canCancel = conditions?.canCancel ?? false;
+  const canChange = conditions?.canChange ?? false;
+
+  return (
+    <div className="bg-white border border-line rounded-xl p-5 space-y-4">
+      <h2 className="text-[14px] font-semibold text-navy">Manage booking</h2>
+
+      <div className="flex flex-wrap gap-3">
+        {/* Cancel */}
+        {conditionsLoaded && canCancel ? (
+          <button
+            onClick={() => navigate(`/trips/${bookingId}/cancel`)}
+            className="btn-ghost text-[13px] px-4 py-2.5 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+          >
+            Cancel booking
+          </button>
+        ) : conditionsLoaded && !canCancel ? (
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-ghost text-[13px] px-4 py-2.5 text-muted"
+            title="This fare cannot be cancelled online"
+          >
+            Request cancellation
+          </a>
+        ) : (
+          <div className="h-9 w-36 bg-line rounded-xl animate-pulse" />
+        )}
+
+        {/* Change */}
+        {conditionsLoaded && canChange ? (
+          <button
+            onClick={() => navigate(`/trips/${bookingId}/change`)}
+            className="btn-primary text-[13px] px-4 py-2.5"
+          >
+            Change flight
+          </button>
+        ) : conditionsLoaded && !canChange ? (
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-ghost text-[13px] px-4 py-2.5 text-muted"
+            title="This fare cannot be changed online"
+          >
+            Request change
+          </a>
+        ) : (
+          <div className="h-9 w-32 bg-line rounded-xl animate-pulse" />
+        )}
+      </div>
+
+      {conditionsLoaded && !canCancel && !canChange && (
+        <p className="text-[12px] text-muted">
+          This fare does not support online changes or cancellations.{' '}
+          <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="underline">
+            Contact us on WhatsApp
+          </a>{' '}
+          for assistance.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Skeleton ───────────────────────────────────────────────────────────────────
+
 function TripDetailSkeleton() {
   return (
     <div className="space-y-4 animate-pulse">
@@ -80,20 +263,26 @@ function TripDetailSkeleton() {
   );
 }
 
+// ── Page ───────────────────────────────────────────────────────────────────────
+
 export function TripDetailPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
+
   const { data: booking, isPending, error } = useQuery({
     queryKey: ['booking', bookingId],
     queryFn: () => fetchBookingById(bookingId!),
     enabled: !!bookingId,
   });
 
-  const whatsappUrl = `https://wa.me/96500000000?text=${encodeURIComponent(`Hi, I'd like to make a change to booking ${booking?.bookingRef ?? bookingId}`)}`;
+  const { data: conditions } = useConditions(
+    booking?.status === 'confirmed' || booking?.status === 'changed' ? bookingId : undefined,
+  );
+
+  const { data: refundEntries = [] } = useRefundLedger(bookingId);
 
   return (
     <MemberShell>
       <div className="space-y-5">
-        {/* Back */}
         <Link to="/trips" className="inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-navy transition-colors">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M9 3L5 7l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -129,11 +318,16 @@ export function TripDetailPage() {
                     </span>
                   )}
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                    booking.status === 'confirmed'
+                    booking.status === 'confirmed' || booking.status === 'changed'
                       ? 'bg-green-tint text-green'
-                      : 'bg-red-50 text-red-500'
+                      : booking.status === 'cancelled'
+                      ? 'bg-red-50 text-red-500'
+                      : 'bg-surface text-muted'
                   }`}>
-                    {booking.status === 'confirmed' ? 'Confirmed' : booking.status}
+                    {booking.status === 'confirmed' ? 'Confirmed'
+                      : booking.status === 'changed' ? 'Changed'
+                      : booking.status === 'cancelled' ? 'Cancelled'
+                      : booking.status}
                   </span>
                 </div>
               </div>
@@ -146,6 +340,9 @@ export function TripDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* Refund strip — shown when a refund is in progress or complete */}
+            <RefundStrip entries={refundEntries} currency={booking.currency} />
 
             {/* Slices */}
             {booking.offerSnapshot?.slices?.map((slice, i) => (
@@ -187,34 +384,16 @@ export function TripDetailPage() {
               </div>
             </div>
 
+            {/* Fare conditions */}
+            {conditions && <ConditionsPanel conditions={conditions} currency={booking.currency} />}
+
             {/* Actions */}
-            <div className="bg-white border border-line rounded-xl p-5 space-y-3">
-              <h2 className="text-[14px] font-semibold text-navy">Need to make changes?</h2>
-              <p className="text-[13px] text-muted">
-                Contact us via WhatsApp for any changes, cancellations, or name corrections.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 btn-primary text-[13px] px-4 py-2.5"
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 1.41.37 2.74 1.01 3.89L0 16l4.25-1.11A7.96 7.96 0 008 16c4.42 0 8-3.58 8-8s-3.58-8-8-8zm3.93 11.14c-.17.49-1 .94-1.38.99-.35.04-.8.06-1.29-.08a11.7 11.7 0 01-1.16-.43C6.3 10.7 4.9 8.8 4.79 8.65c-.11-.15-.9-1.2-.9-2.28s.57-1.62.78-1.84c.2-.22.44-.27.59-.27l.42.01c.14 0 .32-.05.5.38l.63 1.58c.06.15.1.32.01.51l-.22.44-.33.38c-.11.11-.23.23-.1.46.14.23.6.99 1.29 1.6.89.79 1.64 1.03 1.87 1.15.23.11.37.1.5-.06l.72-.85c.13-.17.26-.13.44-.08l1.56.73c.18.09.3.13.34.21.04.07.04.43-.13.92z" />
-                  </svg>
-                  Chat on WhatsApp
-                </a>
-                {booking.contactEmail && (
-                  <a
-                    href={`mailto:${booking.contactEmail}?subject=Booking ${booking.bookingRef ?? bookingId}`}
-                    className="btn-ghost text-[13px] px-4 py-2.5"
-                  >
-                    Email us
-                  </a>
-                )}
-              </div>
-            </div>
+            <ActionsPanel
+              bookingId={bookingId!}
+              bookingRef={booking.bookingRef}
+              conditions={conditions}
+              status={booking.status}
+            />
 
             {/* Meta */}
             {booking.paidAt && (

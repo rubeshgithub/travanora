@@ -40,7 +40,14 @@ function NextTripCard({ trip }: { trip: DashboardBooking }) {
   return (
     <div className="bg-navy rounded-2xl p-6 text-white">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-[12px] font-semibold uppercase tracking-widest text-white/60">Next trip</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[12px] font-semibold uppercase tracking-widest text-white/60">Next trip</p>
+          {trip.status === 'changed' && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-white/15 text-white/80">
+              Changed
+            </span>
+          )}
+        </div>
         {trip.bookingRef && (
           <span className="text-[11px] font-mono text-white/50">{trip.bookingRef}</span>
         )}
@@ -106,8 +113,14 @@ function RecentTripRow({ booking }: { booking: DashboardBooking }) {
       to={`/trips/${booking.id}`}
       className="flex items-center gap-4 px-4 py-3.5 hover:bg-surface rounded-xl transition-colors group"
     >
-      <div className="w-9 h-9 rounded-lg bg-green-tint flex items-center justify-center flex-shrink-0">
-        <span className="text-[11px] font-bold text-green">{booking.airlineCode ?? '??'}</span>
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+        booking.status === 'cancelled' || booking.status === 'cancelling'
+          ? 'bg-surface border border-line'
+          : 'bg-green-tint'
+      }`}>
+        <span className={`text-[11px] font-bold ${
+          booking.status === 'cancelled' || booking.status === 'cancelling' ? 'text-muted' : 'text-green'
+        }`}>{booking.airlineCode ?? '??'}</span>
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-[14px] font-semibold text-navy">
@@ -119,9 +132,15 @@ function RecentTripRow({ booking }: { booking: DashboardBooking }) {
       </div>
       <div className="text-right flex-shrink-0">
         <p className="text-[14px] font-semibold text-navy">{formatPrice(booking.totalAmount, booking.currency)}</p>
-        {booking.memberDiscount > 0 && (
+        {booking.status === 'cancelled' || booking.status === 'cancelling' ? (
+          <p className="text-[11px] text-red-500 font-medium">
+            {booking.status === 'cancelling' ? 'Cancelling' : 'Cancelled'}
+          </p>
+        ) : booking.status === 'changed' ? (
+          <p className="text-[11px] text-blue-600 font-medium">Changed</p>
+        ) : booking.memberDiscount > 0 ? (
           <p className="text-[11px] text-green">Saved {formatPrice(booking.memberDiscount, booking.currency)}</p>
-        )}
+        ) : null}
       </div>
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-muted group-hover:text-navy transition-colors flex-shrink-0">
         <path d="M4 7h6M7.5 4l3 3-3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

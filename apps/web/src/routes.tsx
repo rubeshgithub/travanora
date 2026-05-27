@@ -14,6 +14,11 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { TripsPage } from './pages/TripsPage.js';
 import { TripDetailPage } from './pages/TripDetailPage.js';
+import { TripCancelPage } from './pages/TripCancelPage.js';
+import { TripCancelConfirmedPage } from './pages/TripCancelConfirmedPage.js';
+import { TripChangePage } from './pages/TripChangePage.js';
+import { TripChangeConfirmedPage } from './pages/TripChangeConfirmedPage.js';
+import { AdminRefundsPage } from './pages/AdminRefundsPage.js';
 import { AccountPage } from './pages/AccountPage.js';
 import { SecurityPage } from './pages/SecurityPage.js';
 import { SavedPassengersPage } from './pages/SavedPassengersPage.js';
@@ -65,6 +70,26 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
   {
     path: '/trips/:bookingId',
     element: <RequireAuth><TripDetailPage /></RequireAuth>,
+  },
+  {
+    path: '/trips/:bookingId/cancel',
+    element: <RequireAuth><TripCancelPage /></RequireAuth>,
+  },
+  {
+    path: '/trips/:bookingId/cancel/confirmed',
+    element: <RequireAuth><TripCancelConfirmedPage /></RequireAuth>,
+  },
+  {
+    path: '/trips/:bookingId/change',
+    element: <RequireAuth><TripChangePage /></RequireAuth>,
+  },
+  {
+    path: '/trips/:bookingId/change/confirmed',
+    element: <RequireAuth><TripChangeConfirmedPage /></RequireAuth>,
+  },
+  {
+    path: '/admin/refunds',
+    element: <RequireAuth><AdminRefundsPage /></RequireAuth>,
   },
   {
     path: '/account',

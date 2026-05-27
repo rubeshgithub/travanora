@@ -16,6 +16,8 @@ import { webhookHandler } from './modules/payments/payment.controller.js';
 import accountRouter from './modules/account/account.router.js';
 import passengersRouter from './modules/passengers/passenger.router.js';
 import dashboardRouter from './modules/dashboard/dashboard.router.js';
+import tripsRouter from './modules/trips/trips.router.js';
+import adminRouter from './modules/admin/admin.router.js';
 
 const app: Express = express();
 
@@ -64,6 +66,8 @@ app.use('/api/places', placesRouter);
 app.use('/api/account', accountRouter);
 app.use('/api/passengers', passengersRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/trips', tripsRouter);            // Phase 3b: conditions, cancellation, change
+app.use('/api/admin', adminRouter);            // Ops: admin-only endpoints
 
 // ─── Error handler (must be last) ─────────────────────────────────────────────
 app.use(errorHandler);
